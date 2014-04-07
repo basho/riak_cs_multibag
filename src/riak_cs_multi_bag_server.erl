@@ -1,15 +1,15 @@
 %% @doc The server process which periodically retreives information of multi bags
 
--module(riak_cs_bag_server).
+-module(riak_cs_multi_bag_server).
 
 -behavior(gen_server).
 
 -export([start_link/0]).
--export([allocate/1, status/0, new_weights/1]).
+-export([choose_bag/1, status/0, new_weights/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--include("riak_cs_bag.hrl").
+-include("riak_cs_multi_bag.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -27,10 +27,10 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
--spec allocate(riak_cs_bag:allocate_type()) -> {ok, riak_cs_bag:bag_id()} |
-                                               {error, term()}.
-allocate(Type) ->
-    gen_server:call(?SERVER, {allocate, Type}).
+-spec choose_bag(manifest | block) -> {ok, riak_cs_bag:bag_id()} |
+                                      {error, term()}.
+choose_bag(Type) ->
+    gen_server:call(?SERVER, {choose_bag, Type}).
 
 new_weights(Weights) ->
     gen_server:cast(?SERVER, {new_weights, Weights}).
@@ -41,21 +41,21 @@ status() ->
 init([]) ->
     {ok, #state{}}.
 
-handle_call({allocate, Type}, _From, #state{initialized = true} = State)
+handle_call({choose_bag, Type}, _From, #state{initialized = true} = State)
   when Type =:= block orelse Type =:= manifest ->
-    Decision = case Type of
-                block ->
-                    decide_bag(State#state.blocks);
-                manifest ->
-                    decide_bag(State#state.manifests)
-            end,
-    case Decision of
+    Choice = case Type of
+                 block ->
+                     choose_bag_by_weight(State#state.blocks);
+                 manifest ->
+                     choose_bag_by_weight(State#state.manifests)
+             end,
+    case Choice of
         {ok, BagId} ->
             {reply, {ok, BagId}, State};
         {error, no_bag} ->
             {reply, {error, no_bag}, State}
     end;
-handle_call({allocate, _Type}, _From, #state{initialized = false} = State) ->
+handle_call({choose_bag, _Type}, _From, #state{initialized = false} = State) ->
     {reply, {error, not_initialized}, State};
 handle_call(status, _From, #state{initialized=Initialized, 
                                   blocks=Blocks, manifests=Manifests} = State) ->
@@ -81,29 +81,30 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%% Decide bag to allocate block/manifest randomly regarding weights
+%% Choose a bag, to which block/manifest will be stored randomly, regarding weights
 %% bag    weight    cummulative-weight   point (1..60)
 %% bag1   20        20                    1..20
 %% bag2   10        30                   21..30
 %% bag3    0        30                   N/A
 %% bag4   30        60                   31..60
--spec decide_bag([{riak_cs_bag:pool_key(), riak_cs_bag:weight_info()}]) ->
-                        {ok, riak_cs_bag:bag_id()} |
-                        {error, no_bag}.
-decide_bag([]) ->
+%% TODO: Make this function deterministic
+-spec choose_bag_by_weight([{riak_cs_multi_bag:pool_key(), riak_cs_multi_bag:weight_info()}]) ->
+                                  {ok, riak_cs_multi_bag:bag_id()} |
+                                  {error, no_bag}.
+choose_bag_by_weight([]) ->
     {error, no_bag};
-decide_bag(WeightInfoList) ->
+choose_bag_by_weight(WeightInfoList) ->
     %% TODO: SumOfWeights can be stored in state
     SumOfWeights = lists:sum([Weight || #weight_info{weight = Weight} <- WeightInfoList]),
     Point = random:uniform(SumOfWeights),
-    decide_bag(Point, WeightInfoList).
+    choose_bag_by_weight(Point, WeightInfoList).
 
 %% Always "1 =< Point" holds, bag_id with weight=0 never selected.
-decide_bag(Point, [#weight_info{bag_id = BagId, weight = Weight} | _WeightInfoList])
+choose_bag_by_weight(Point, [#weight_info{bag_id = BagId, weight = Weight} | _WeightInfoList])
   when Point =< Weight ->
     {ok, BagId};
-decide_bag(Point, [#weight_info{weight = Weight} | WeightInfoList]) ->
-    decide_bag(Point - Weight, WeightInfoList).
+choose_bag_by_weight(Point, [#weight_info{weight = Weight} | WeightInfoList]) ->
+    choose_bag_by_weight(Point - Weight, WeightInfoList).
 
 update_weight_state([], State) ->
     State#state{initialized = true};
@@ -121,7 +122,7 @@ update_weight_state([{Type, WeightsForType} | Rest], State) ->
 %% ===================================================================
 -ifdef(TEST).
 
-decide_bag_test() ->
+choose_bag_by_weight_test() ->
     %% Better to convert to quickcheck?
     WeightInfoList = dummy_weights(),
     ListOfPointAndBagId = [
@@ -134,7 +135,7 @@ decide_bag_test() ->
                            {101, <<"bag-C">>},
                            {110, <<"bag-C">>},
                            {120, <<"bag-C">>}],
-    [?assertEqual({ok, BagId}, decide_bag(Point, WeightInfoList)) ||
+    [?assertEqual({ok, BagId}, choose_bag_by_weight(Point, WeightInfoList)) ||
         {Point, BagId} <- ListOfPointAndBagId].
 
 dummy_weights() ->

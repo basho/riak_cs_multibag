@@ -1,16 +1,19 @@
-%% @doc The worker process executing possibly long running tasks
+%% @doc The worker process to update weight information
+%% periodically or when triggered by command.
+%% Because GET/PUT may block, e.g. network failure, updating
+%% task is done by the dedicated process.
 
--module(riak_cs_bag_worker).
+-module(riak_cs_multi_bag_weight_updater).
 
 -behavior(gen_server).
 
 -export([start_link/0]).
 -export([status/0, input/1, refresh/0, weights/0]).
--export([refresh_interval_msec/0, set_refresh_interval_msec/1]).
+-export([refresh_interval/0, set_refresh_interval/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--include("riak_cs_bag.hrl").
+-include("riak_cs_multi_bag.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -21,12 +24,13 @@
           timer_ref :: reference() | undefined,
           %% Consecutive refresh failures
           failed_count = 0 :: non_neg_integer(),
-          weights = [] :: [{riak_cs_bag:pool_type(),
-                            [{riak_cs_bag:pool_key(), riak_cs_bag:weight_info()}]}]
+          weights = [] :: [{riak_cs_multi_bag:pool_type(),
+                            [{riak_cs_multi_bag:pool_key(),
+                              riak_cs_multi_bag:weight_info()}]}]
          }).
 
 -define(SERVER, ?MODULE).
--define(REFRESH_INTERVAL, timer:minutes(5)).
+-define(REFRESH_INTERVAL, 900). % 900 sec = 15 min
 
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
@@ -49,17 +53,18 @@ input(Json) ->
 weights() ->
     gen_server:call(?SERVER, weights).
 
-refresh_interval_msec() ->
-    riak_cs_config:get_env(riak_cs, weight_refresh_interval_msec, ?REFRESH_INTERVAL).
+refresh_interval() ->
+    riak_cs_config:get_env(riak_cs_multi_bag, weight_refresh_interval,
+                           ?REFRESH_INTERVAL).
 
-set_refresh_interval_msec(Interval) when is_integer(Interval) andalso Interval > 0 ->
-    application:set_env(riak_cs, weight_refresh_interval_msec, Interval).
+set_refresh_interval(Interval) when is_integer(Interval) andalso Interval > 0 ->
+    application:set_env(riak_cs_multi_bag, weight_refresh_interval, Interval).
 
 init([]) ->
     {ok, #state{}, 0}.
 
 handle_call(status, _From, #state{failed_count=FailedCount} = State) ->
-    {reply, {ok, [{interval, refresh_interval_msec()}, {failed_count, FailedCount}]}, State};
+    {reply, {ok, [{interval, refresh_interval()}, {failed_count, FailedCount}]}, State};
 handle_call(weights, _From, #state{weights = Weights} = State) ->
     {reply, {ok, Weights}, State};
 handle_call(refresh, _From, State) ->
@@ -123,12 +128,12 @@ handle_weight_info_list({ok, Obj}, State) ->
     %% TODO: How to handle siblings
     [Value | _] = riakc_obj:get_values(Obj),
     Weights = binary_to_term(Value),
-    riak_cs_bag_server:new_weights(Weights),
+    riak_cs_multi_bag_server:new_weights(Weights),
     {ok, Weights, State#state{failed_count = 0, weights = Weights}}.
 
 schedule(State) ->
-    Interval = refresh_interval_msec(),
-    Ref = erlang:send_after(Interval, self(), refresh_by_timer),
+    IntervalMSec = refresh_interval() * 1000,
+    Ref = erlang:send_after(IntervalMSec, self(), refresh_by_timer),
     State#state{timer_ref = Ref}.
 
 json_to_weight_info_list({struct, JSON}) ->
