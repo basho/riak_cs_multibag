@@ -98,7 +98,6 @@ init_ets() ->
     ets:new(?ETS_TAB, [{keypos, 2}, named_table, protected,
                        {read_concurrency, true}]).
 
-
 store_pool_records(MasterPoolConfig, Bags) ->
     store_pool_records(MasterPoolConfig, Bags, MasterPoolConfig).
 
@@ -112,7 +111,7 @@ store_pool_records(OriginalMasterConfigs, [Bag | _] = Bags, [MasterConfig | Rest
 
 store_pool_record({BagId, IP, Port}, {PoolType, Sizes}) ->
     Name = list_to_atom(lists:flatten(io_lib:format("~s_~s", [PoolType, BagId]))),
-    true = ets:insert(?ETS_TAB, #pool{key = {PoolType, BagId},
+    true = ets:insert(?ETS_TAB, #pool{key = {PoolType, list_to_binary(BagId)},
                                       type = PoolType,
                                       ip = IP,
                                       port = Port,

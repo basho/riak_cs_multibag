@@ -27,7 +27,6 @@
 -include_lib("erlcloud/include/erlcloud_aws.hrl").
 -include_lib("eunit/include/eunit.hrl").
 %% -include_lib("riak_cs/include/riak_cs.hrl").
--include("riak_cs.hrl").
 
 -define(CS_CURRENT, <<"build_paths.cs_current">>).
 
@@ -92,10 +91,11 @@ transition_to_multi_bag_configuration(AdminConfig, NodeList) ->
     ok.
 
 multi_bag_config() ->
-    CustomConfig = [{multi_bag, [{"bag-A", "127.0.0.1", 10017},
-                                 {"bag-B", "127.0.0.1", 10027},
-                                 {"bag-C", "127.0.0.1", 10037}]}],
-    [{cs, rtcs:cs_config(CustomConfig)}].
+    MBConf =
+        [{bags, [{"bag-A", "127.0.0.1", 10017},
+                 {"bag-B", "127.0.0.1", 10027},
+                 {"bag-C", "127.0.0.1", 10037}]}],
+    [{cs, rtcs:cs_config([], MBConf)}].
 
 weights() ->
     [

@@ -46,11 +46,11 @@ confirm() ->
     pass.
 
 multi_bag_config() ->
-    CustomConfig =
-        [{multi_bag, [{"bag-A", "127.0.0.1", 10017},
-                      {"bag-B", "127.0.0.1", 10027},
-                      {"bag-C", "127.0.0.1", 10037}]}],
-    [{cs, rtcs:cs_config(CustomConfig)}].
+    MBConf =
+        [{bags, [{"bag-A", "127.0.0.1", 10017},
+                 {"bag-B", "127.0.0.1", 10027},
+                 {"bag-C", "127.0.0.1", 10037}]}],
+    [{cs, rtcs:cs_config([], MBConf)}].
 
 weights() ->
     [
