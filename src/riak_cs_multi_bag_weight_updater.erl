@@ -7,7 +7,7 @@
 
 -behavior(gen_server).
 
--export([start_link/0]).
+-export([start_link/1]).
 -export([status/0, input/1, refresh/0, weights/0]).
 -export([refresh_interval/0, set_refresh_interval/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -26,14 +26,16 @@
           failed_count = 0 :: non_neg_integer(),
           weights = [] :: [{riak_cs_multi_bag:pool_type(),
                             [{riak_cs_multi_bag:pool_key(),
-                              riak_cs_multi_bag:weight_info()}]}]
+                              riak_cs_multi_bag:weight_info()}]}],
+          conn_open_fun :: fun(),
+          conn_close_fun :: fun()
          }).
 
 -define(SERVER, ?MODULE).
 -define(REFRESH_INTERVAL, 900). % 900 sec = 15 min
 
-start_link() ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+start_link(Args) ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, Args, []).
 
 status() ->
     gen_server:call(?SERVER, status).
@@ -42,31 +44,36 @@ refresh() ->
     gen_server:call(?SERVER, refresh).
 
 input(Json) ->
-    case json_to_weight_info_list(Json) of
-        {ok, WeightInfoList} ->
-            verify_weight_info_list_input(WeightInfoList);
-        {error, Reason} ->
-            lager:debug("riak_cs_bag_worker:input failed: ~p~n", [Reason]),
-            {error, Reason}
-    end.
+    gen_server:call(?SERVER, {input, Json}).
 
 weights() ->
     gen_server:call(?SERVER, weights).
 
 refresh_interval() ->
-    riak_cs_config:get_env(riak_cs_multi_bag, weight_refresh_interval,
-                           ?REFRESH_INTERVAL).
+    case application:get_env(riak_cs_multi_bag, weight_refresh_interval) of
+        undefined -> ?REFRESH_INTERVAL;
+        {ok, Value} -> Value
+    end.
 
 set_refresh_interval(Interval) when is_integer(Interval) andalso Interval > 0 ->
     application:set_env(riak_cs_multi_bag, weight_refresh_interval, Interval).
 
-init([]) ->
-    {ok, #state{}, 0}.
+init(Args) ->
+    {conn_open_mf, {OpenM, OpenF}} = lists:keyfind(conn_open_mf, 1, Args),
+    {conn_close_mf, {CloseM, CloseF}} = lists:keyfind(conn_close_mf, 1, Args),
+    {ok, #state{conn_open_fun=fun OpenM:OpenF/0, conn_close_fun=fun CloseM:CloseF/1}, 0}.
 
 handle_call(status, _From, #state{failed_count=FailedCount} = State) ->
     {reply, {ok, [{interval, refresh_interval()}, {failed_count, FailedCount}]}, State};
 handle_call(weights, _From, #state{weights = Weights} = State) ->
     {reply, {ok, Weights}, State};
+handle_call({input, Json}, _From, State) ->
+    case input(Json, State) of
+        {ok, NewWeights} ->
+            {reply, {ok, NewWeights}, State#state{weights=NewWeights}};
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
+    end;
 handle_call(refresh, _From, State) ->
     case fetch_weights(State) of
         {ok, WeightInfoList, NewState} ->
@@ -108,11 +115,11 @@ refresh_by_timer(State) ->
     end.
 
 %% Connect to default cluster and GET weight information
-fetch_weights(State) ->
-    case riak_cs_utils:riak_connection() of
+fetch_weights(#state{conn_open_fun=OpenFun, conn_close_fun=CloseFun} = State) ->
+    case OpenFun() of
         {ok, Riakc} ->
             Result = riakc_pb_socket:get(Riakc, ?WEIGHT_BUCKET, ?WEIGHT_KEY),
-            riak_cs_utils:close_riak_connection(Riakc),
+            CloseFun(Riakc),
             handle_weight_info_list(Result, State);
         {error, _Reason} = E ->
             handle_weight_info_list(E, State)
@@ -136,8 +143,19 @@ schedule(State) ->
     Ref = erlang:send_after(IntervalMSec, self(), refresh_by_timer),
     State#state{timer_ref = Ref}.
 
+input(Json, State) ->
+    case json_to_weight_info_list(Json) of
+        {ok, WeightInfoList} ->
+            update_weight_info(WeightInfoList, State);
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 json_to_weight_info_list({struct, JSON}) ->
-    json_to_weight_info_list(JSON, []).
+    case json_to_weight_info_list(JSON, []) of
+        {ok, WeightInfoList} -> verify_weight_info_list_input(WeightInfoList);
+        {error, Reason} -> {error, Reason}
+    end.
 
 json_to_weight_info_list([], WeightInfoList) ->
     {ok, WeightInfoList};
@@ -195,26 +213,22 @@ json_to_weight_info(Json, _WeightInfo) ->
 
 verify_weight_info_list_input(WeightInfoList) ->
     %% TODO implement verify logic or consistency checks
-    overwrite_and_refresh(WeightInfoList).
+    {ok, WeightInfoList}.
 
-overwrite_and_refresh(WeightInfoList) ->
-    case overwrite_weight_info(WeightInfoList) of
-        ok ->
-            refresh();
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-%% Connect to default cluster and overwrite weights at {riak-cs-bag, weight}
-overwrite_weight_info(WeightInfoList) ->
-    case riak_cs_utils:riak_connection() of
+%% Connect to Riak cluster and overwrite weights at {riak-cs-bag, weight}
+update_weight_info(WeightInfoList, #state{conn_open_fun=OpenFun, conn_close_fun=CloseFun}) ->
+    case OpenFun() of
         {ok, Riakc} ->
-            update_to_new_weight_info(Riakc, WeightInfoList);
+            try
+                get_weight_info(Riakc, WeightInfoList)
+            after
+                CloseFun(Riakc)
+            end;
         {error, _Reason} = E ->
             E
     end.
 
-update_to_new_weight_info(Riakc, WeightInfoList) ->
+get_weight_info(Riakc, WeightInfoList) ->
     Current = case riakc_pb_socket:get(Riakc, ?WEIGHT_BUCKET, ?WEIGHT_KEY) of
                   {error, notfound} ->
                       {ok, riakc_obj:new(?WEIGHT_BUCKET, ?WEIGHT_KEY)};
@@ -223,21 +237,19 @@ update_to_new_weight_info(Riakc, WeightInfoList) ->
                   {ok, Obj} ->
                       {ok, Obj}
               end,
-    update_weight_info(Riakc, WeightInfoList, Current).
+    put_weight_info(Riakc, WeightInfoList, Current).
 
-update_weight_info(Riakc, _WeightInfoList, {error, Reason}) ->
-    riak_cs_utils:close_riak_connection(Riakc),
+put_weight_info(_Riakc, _WeightInfoList, {error, Reason}) ->
     lager:error("Retrieval of bag weight information failed. Reason: ~p", [Reason]),
     {error, Reason};
-update_weight_info(Riakc, WeightInfoList, {ok, Obj}) ->
+put_weight_info(Riakc, WeightInfoList, {ok, Obj}) ->
     NewObj = riakc_obj:update_value(
                riakc_obj:update_metadata(Obj, dict:new()),
                term_to_binary(WeightInfoList)),
-    PutRes = riakc_pb_socket:put(Riakc, NewObj),
-    riak_cs_utils:close_riak_connection(Riakc),
-    case PutRes of
+    case riakc_pb_socket:put(Riakc, NewObj) of
         ok ->
-            ok;
+            riak_cs_multi_bag_server:new_weights(WeightInfoList),
+            {ok, WeightInfoList};
         {error, Reason} ->
             lager:error("Update of bag weight information failed. Reason: ~p", [Reason]),
             {error, Reason}

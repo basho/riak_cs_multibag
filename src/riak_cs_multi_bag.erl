@@ -3,7 +3,8 @@
 -module(riak_cs_multi_bag).
 
 -export([process_specs/0, pool_specs/1, pool_name_for_bag/2, choose_bag_id/1]).
--export([pool_status/0, tab_info/0]).
+-export([list_pool/0, list_pool/1]).
+-export([tab_name/0, tab_info/0]).
 
 -export_type([pool_key/0, pool_type/0, bag_id/0, weight_info/0]).
 
@@ -15,9 +16,6 @@
                name :: atom(),
                sizes :: {non_neg_integer(), non_neg_integer()}}).
 
--include_lib("stdlib/include/ms_transform.hrl").
--include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
--include_lib("riak_cs/include/riak_cs.hrl").
 -include("riak_cs_multi_bag.hrl").
 
 %% These types are defined also in riak_cs, but for compilation
@@ -28,9 +26,13 @@
 -type pool_key() :: {pool_type(), bag_id()}.
 -type weight_info() :: #weight_info{}.
 
+-ifdef(TEST).
+-compile(export_all).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 maybe_init(MasterPoolConfigs, Bags) ->
     init_ets(),
-    lager:log(warning, self(), "BagConfig: ~p~n", [Bags]),
     ok = store_pool_records(MasterPoolConfigs, Bags),
     ok.
 
@@ -38,8 +40,14 @@ process_specs() ->
     BagServer = {riak_cs_multi_bag_server,
                  {riak_cs_multi_bag_server, start_link, []},
                  permanent, 5000, worker, [riak_cs_multi_bag_server]},
+    %% Pass connection open/close information not to "explicitly" depends on riak_cs
+    %% and to make unit test easier.
+    %% TODO: better to pass these MF's by argument process_specs
+    WeightUpdaterArgs = [{conn_open_mf, {riak_cs_utils, riak_connection}},
+                         {conn_close_mf, {riak_cs_utils, close_riak_connection}}],
     WeightUpdater = {riak_cs_multi_bag_weight_updater,
-                     {riak_cs_multi_bag_weight_updater, start_link, []},
+                     {riak_cs_multi_bag_weight_updater, start_link,
+                      [WeightUpdaterArgs]},
                      permanent, 5000, worker, [riak_cs_bag_worker]},
     [BagServer, WeightUpdater].
 
@@ -83,7 +91,7 @@ default_bag_id(Type) ->
 %% Choose bag ID for new bucket or new manifest
 -spec choose_bag_id(manifet | block) -> bag_id().
 choose_bag_id(Type) ->
-    {ok, BagId} = riak_cs_multi_bag_server:choose(Type),
+    {ok, BagId} = riak_cs_multi_bag_server:choose_bag(Type),
     BagId.
 
 init_ets() ->
@@ -114,11 +122,27 @@ store_pool_record({BagId, IP, Port}, {PoolType, Sizes}) ->
 record_to_spec(#pool{ip=IP, port=Port, name=Name, sizes=Sizes}) ->
     {Name, Sizes, {IP, Port}}.
 
+list_pool() ->
+    [{Name, Type, BagId} ||
+        #pool{key={Type, BagId}, name=Name} <- ets:tab2list(?ETS_TAB)].
+
+list_pool(PoolType) ->
+    [{Name, Type, BagId} ||
+        #pool{key={Type, BagId}, name=Name} <- ets:tab2list(?ETS_TAB),
+        Type =:= PoolType].
+
 %% For Debugging
+
+tab_name() ->
+    ?ETS_TAB.
 
 tab_info() ->
     ets:tab2list(?ETS_TAB).
 
-pool_status() ->
-    [{Type, BagId, Name, poolboy:status(Name)} ||
-        #pool{key={Type, BagId}, name=Name} <- ets:tab2list(?ETS_TAB)].
+-ifdef(TEST).
+%% ===================================================================
+%% EUnit tests
+%% ===================================================================
+
+-endif.
+
