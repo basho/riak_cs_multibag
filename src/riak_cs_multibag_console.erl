@@ -1,6 +1,6 @@
 %% @doc These functions are used by the riak-cs-bag command line script.
 
--module(riak_cs_multi_bag_console).
+-module(riak_cs_multibag_console).
 
 -export([status/1, input/1, refresh/1]).
 
@@ -26,11 +26,11 @@ status(_Opts) ->
     ?SAFELY(get_status(), "Show current weight information").
 
 refresh(_Opts) ->
-    ?SAFELY(handle_result(riak_cs_multi_bag_weight_updater:refresh()),
+    ?SAFELY(handle_result(riak_cs_multibag_weight_updater:refresh()),
             "Refresh weight information").
 
 input(Args) ->
-    ?SAFELY(handle_result(riak_cs_multi_bag_weight_updater:input(parse_input_args(Args))),
+    ?SAFELY(handle_result(riak_cs_multibag_weight_updater:input(parse_input_args(Args))),
             "Updating the weight information").
 
 %%%===================================================================
@@ -38,7 +38,7 @@ input(Args) ->
 %%%===================================================================
 
 get_status() ->
-    handle_status(riak_cs_multi_bag_server:status()).
+    handle_status(riak_cs_multibag_server:status()).
 
 handle_status({ok, Status}) ->
     %% TODO: More readable format

@@ -1,6 +1,6 @@
 %% @doc The server process which periodically retreives information of multi bags
 
--module(riak_cs_multi_bag_server).
+-module(riak_cs_multibag_server).
 
 -behavior(gen_server).
 
@@ -9,7 +9,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--include("riak_cs_multi_bag.hrl").
+-include("riak_cs_multibag.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -88,8 +88,8 @@ code_change(_OldVsn, State, _Extra) ->
 %% bag3    0        30                   N/A
 %% bag4   30        60                   31..60
 %% TODO: Make this function deterministic
--spec choose_bag_by_weight([{riak_cs_multi_bag:pool_key(), riak_cs_multi_bag:weight_info()}]) ->
-                                  {ok, riak_cs_multi_bag:bag_id()} |
+-spec choose_bag_by_weight([{riak_cs_multibag:pool_key(), riak_cs_multibag:weight_info()}]) ->
+                                  {ok, riak_cs_multibag:bag_id()} |
                                   {error, no_bag}.
 choose_bag_by_weight([]) ->
     {error, no_bag};

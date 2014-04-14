@@ -1,2 +1,2 @@
-riak_cs_bag
-===========
+riak_cs_multibag
+================

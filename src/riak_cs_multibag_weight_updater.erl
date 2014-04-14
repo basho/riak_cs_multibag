@@ -3,7 +3,7 @@
 %% Because GET/PUT may block, e.g. network failure, updating
 %% task is done by the dedicated process.
 
--module(riak_cs_multi_bag_weight_updater).
+-module(riak_cs_multibag_weight_updater).
 
 -behavior(gen_server).
 
@@ -13,7 +13,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
--include("riak_cs_multi_bag.hrl").
+-include("riak_cs_multibag.hrl").
 
 -ifdef(TEST).
 -compile(export_all).
@@ -24,9 +24,9 @@
           timer_ref :: reference() | undefined,
           %% Consecutive refresh failures
           failed_count = 0 :: non_neg_integer(),
-          weights = [] :: [{riak_cs_multi_bag:pool_type(),
-                            [{riak_cs_multi_bag:pool_key(),
-                              riak_cs_multi_bag:weight_info()}]}],
+          weights = [] :: [{riak_cs_multibag:pool_type(),
+                            [{riak_cs_multibag:pool_key(),
+                              riak_cs_multibag:weight_info()}]}],
           conn_open_fun :: fun(),
           conn_close_fun :: fun()
          }).
@@ -50,13 +50,13 @@ weights() ->
     gen_server:call(?SERVER, weights).
 
 refresh_interval() ->
-    case application:get_env(riak_cs_multi_bag, weight_refresh_interval) of
+    case application:get_env(riak_cs_multibag, weight_refresh_interval) of
         undefined -> ?REFRESH_INTERVAL;
         {ok, Value} -> Value
     end.
 
 set_refresh_interval(Interval) when is_integer(Interval) andalso Interval > 0 ->
-    application:set_env(riak_cs_multi_bag, weight_refresh_interval, Interval).
+    application:set_env(riak_cs_multibag, weight_refresh_interval, Interval).
 
 init(Args) ->
     {conn_open_mf, {OpenM, OpenF}} = lists:keyfind(conn_open_mf, 1, Args),
@@ -135,7 +135,7 @@ handle_weight_info_list({ok, Obj}, State) ->
     %% TODO: How to handle siblings
     [Value | _] = riakc_obj:get_values(Obj),
     Weights = binary_to_term(Value),
-    riak_cs_multi_bag_server:new_weights(Weights),
+    riak_cs_multibag_server:new_weights(Weights),
     {ok, Weights, State#state{failed_count = 0, weights = Weights}}.
 
 schedule(State) ->
@@ -248,7 +248,7 @@ put_weight_info(Riakc, WeightInfoList, {ok, Obj}) ->
                term_to_binary(WeightInfoList)),
     case riakc_pb_socket:put(Riakc, NewObj) of
         ok ->
-            riak_cs_multi_bag_server:new_weights(WeightInfoList),
+            riak_cs_multibag_server:new_weights(WeightInfoList),
             {ok, WeightInfoList};
         {error, Reason} ->
             lager:error("Update of bag weight information failed. Reason: ~p", [Reason]),

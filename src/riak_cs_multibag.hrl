@@ -3,7 +3,7 @@
 -define(WEIGHT_KEY,    <<"weight">>).
 
 -record(weight_info, {
-          bag_id :: riak_cs_multi_bag:bag_id(),
+          bag_id :: riak_cs_multibag:bag_id(),
           weight :: non_neg_integer(),
           free :: non_neg_integer(),     % not used currently
           total :: non_neg_integer()     % not used currently

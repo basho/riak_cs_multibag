@@ -1,7 +1,7 @@
 %%-*- mode: erlang -*-
-{application, riak_cs_multi_bag,
+{application, riak_cs_multibag,
  [
-  {description, "riak_cs_multi_bag"},
+  {description, "riak_cs_multibag"},
   {vsn, git},
   {modules, []},
   {registered, []},

@@ -1,6 +1,6 @@
 %% @doc Support multi Riak clusters in single Riak CS system
 
--module(riak_cs_multi_bag).
+-module(riak_cs_multibag).
 
 -export([process_specs/0, pool_specs/1, pool_name_for_bag/2, choose_bag_id/1]).
 -export([list_pool/0, list_pool/1]).
@@ -16,7 +16,7 @@
                name :: atom(),
                sizes :: {non_neg_integer(), non_neg_integer()}}).
 
--include("riak_cs_multi_bag.hrl").
+-include("riak_cs_multibag.hrl").
 
 %% These types are defined also in riak_cs, but for compilation
 %% declare them again
@@ -37,16 +37,16 @@ maybe_init(MasterPoolConfigs, Bags) ->
     ok.
 
 process_specs() ->
-    BagServer = {riak_cs_multi_bag_server,
-                 {riak_cs_multi_bag_server, start_link, []},
-                 permanent, 5000, worker, [riak_cs_multi_bag_server]},
+    BagServer = {riak_cs_multibag_server,
+                 {riak_cs_multibag_server, start_link, []},
+                 permanent, 5000, worker, [riak_cs_multibag_server]},
     %% Pass connection open/close information not to "explicitly" depends on riak_cs
     %% and to make unit test easier.
     %% TODO: better to pass these MF's by argument process_specs
     WeightUpdaterArgs = [{conn_open_mf, {riak_cs_utils, riak_connection}},
                          {conn_close_mf, {riak_cs_utils, close_riak_connection}}],
-    WeightUpdater = {riak_cs_multi_bag_weight_updater,
-                     {riak_cs_multi_bag_weight_updater, start_link,
+    WeightUpdater = {riak_cs_multibag_weight_updater,
+                     {riak_cs_multibag_weight_updater, start_link,
                       [WeightUpdaterArgs]},
                      permanent, 5000, worker, [riak_cs_bag_worker]},
     [BagServer, WeightUpdater].
@@ -55,7 +55,7 @@ process_specs() ->
 %% This function assumes that it is called ONLY ONCE at initialization.
 -spec pool_specs(term()) -> [{atom(), {non_neg_integer(), non_neg_integer()}}].
 pool_specs(MasterPoolConfig) ->
-    {ok, Bags} = application:get_env(riak_cs_multi_bag, bags),
+    {ok, Bags} = application:get_env(riak_cs_multibag, bags),
     maybe_init(MasterPoolConfig, Bags),
     [record_to_spec(P) || P <- ets:tab2list(?ETS_TAB)].
 %% Translate bag ID to pool name.
@@ -91,7 +91,7 @@ default_bag_id(Type) ->
 %% Choose bag ID for new bucket or new manifest
 -spec choose_bag_id(manifet | block) -> bag_id().
 choose_bag_id(Type) ->
-    {ok, BagId} = riak_cs_multi_bag_server:choose_bag(Type),
+    {ok, BagId} = riak_cs_multibag_server:choose_bag(Type),
     BagId.
 
 init_ets() ->

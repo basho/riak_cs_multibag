@@ -18,7 +18,7 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(multi_bag_disjoint_test).
+-module(multibag_disjoint_test).
 
 %% @doc `riak_test' module for testing multi bag disjoint configuration
 
@@ -30,7 +30,7 @@
 -define(KEY_MULTIPART, "key_multipart").
 
 confirm() ->
-    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup1x1x1(multi_bag_config()),
+    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup1x1x1(multibag_config()),
     bag_input(),
     lager:info("User is valid on the cluster, and has no buckets"),
     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(UserConfig)),
@@ -45,7 +45,7 @@ confirm() ->
     assert_object_in_expected_bag(RiakNodes, UserConfig, multipart),
     pass.
 
-multi_bag_config() ->
+multibag_config() ->
     MBConf =
         [{bags, [{"bag-A", "127.0.0.1", 10017},
                  {"bag-B", "127.0.0.1", 10027},

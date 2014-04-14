@@ -18,7 +18,7 @@
 %%
 %% ---------------------------------------------------------------------
 
--module(multi_bag_transition_test).
+-module(multibag_transition_test).
 
 %% @doc `riak_test' module for testing transition from single bag configuration
 %% to multiple bag one
@@ -41,7 +41,7 @@ confirm() ->
     {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup1x1x1(),
     OldInOldContent = setup_old_bucket_and_key(UserConfig, ?OLD_BUCKET, ?OLD_KEY_IN_OLD),
 
-    transition_to_multi_bag_configuration(UserConfig, lists:zip(CSNodes, RiakNodes)),
+    transition_to_multibag_configuration(UserConfig, lists:zip(CSNodes, RiakNodes)),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?NEW_BUCKET, UserConfig)),
     NewInOldContent = rand_content(),
     erlcloud_s3:put_object(?OLD_BUCKET, ?NEW_KEY_IN_OLD, NewInOldContent, UserConfig),
@@ -74,8 +74,8 @@ setup_old_bucket_and_key(UserConfig, Bucket, Key) ->
 rand_content() ->
     crypto:rand_bytes(4 * 1024 * 1024).
 
-transition_to_multi_bag_configuration(AdminConfig, NodeList) ->
-    Config = multi_bag_config(),
+transition_to_multibag_configuration(AdminConfig, NodeList) ->
+    Config = multibag_config(),
     #aws_config{access_key_id=K, secret_access_key=S} = AdminConfig,
     rtcs:stop_cs_and_stanchion_nodes(NodeList),
     rt:pmap(fun({_CSNode, RiakNode}) ->
@@ -90,7 +90,7 @@ transition_to_multi_bag_configuration(AdminConfig, NodeList) ->
     bag_input(),
     ok.
 
-multi_bag_config() ->
+multibag_config() ->
     MBConf =
         [{bags, [{"bag-A", "127.0.0.1", 10017},
                  {"bag-B", "127.0.0.1", 10027},
