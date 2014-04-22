@@ -11,7 +11,7 @@
 -define(ETS_TAB, ?MODULE).
 -record(pool, {key :: pool_key(),
                type :: pool_type(), % for match spec
-               ip :: string(),
+               address :: string(),
                port :: non_neg_integer(),
                name :: atom(),
                sizes :: {non_neg_integer(), non_neg_integer()}}).
@@ -109,25 +109,27 @@ store_pool_records(OriginalMasterConfigs, [Bag | _] = Bags, [MasterConfig | Rest
     store_pool_record(Bag, MasterConfig),
     store_pool_records(OriginalMasterConfigs, Bags, RestMasterConfigs).
 
-store_pool_record({BagId, IP, Port}, {PoolType, Sizes}) ->
+store_pool_record({BagId, Address, Port}, {PoolType, Sizes}) ->
     Name = list_to_atom(lists:flatten(io_lib:format("~s_~s", [PoolType, BagId]))),
     true = ets:insert(?ETS_TAB, #pool{key = {PoolType, list_to_binary(BagId)},
                                       type = PoolType,
-                                      ip = IP,
+                                      address = Address,
                                       port = Port,
                                       name = Name,
                                       sizes = Sizes}).
 
-record_to_spec(#pool{ip=IP, port=Port, name=Name, sizes=Sizes}) ->
-    {Name, Sizes, {IP, Port}}.
+record_to_spec(#pool{address=Address, port=Port, name=Name, sizes=Sizes}) ->
+    {Name, Sizes, {Address, Port}}.
 
 list_pool() ->
-    [{Name, Type, BagId} ||
-        #pool{key={Type, BagId}, name=Name} <- ets:tab2list(?ETS_TAB)].
+    [{Name, Type, BagId, [{address, Address}, {port, Port}]} ||
+        #pool{key={Type, BagId}, name=Name, address=Address, port=Port} <-
+            ets:tab2list(?ETS_TAB)].
 
 list_pool(PoolType) ->
-    [{Name, Type, BagId} ||
-        #pool{key={Type, BagId}, name=Name} <- ets:tab2list(?ETS_TAB),
+    [{Name, Type, BagId, [{address, Address}, {port, Port}]} ||
+        #pool{key={Type, BagId}, name=Name, address=Address, port=Port} <-
+            ets:tab2list(?ETS_TAB),
         Type =:= PoolType].
 
 %% For Debugging
