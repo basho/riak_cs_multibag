@@ -8,7 +8,7 @@
 -behavior(gen_server).
 
 -export([start_link/1]).
--export([status/0, input/1, refresh/0, weights/0]).
+-export([status/0, set_weight/1, set_weight_by_type/2, refresh/0, weights/0]).
 -export([refresh_interval/0, set_refresh_interval/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
@@ -24,9 +24,9 @@
           timer_ref :: reference() | undefined,
           %% Consecutive refresh failures
           failed_count = 0 :: non_neg_integer(),
-          weights = [] :: [{riak_cs_multibag:pool_type(),
-                            [{riak_cs_multibag:pool_key(),
-                              riak_cs_multibag:weight_info()}]}],
+          weights :: [{riak_cs_multibag:pool_type(),
+                       [{riak_cs_multibag:pool_key(),
+                         riak_cs_multibag:weight_info()}]}],
           conn_open_fun :: fun(),
           conn_close_fun :: fun()
          }).
@@ -43,8 +43,11 @@ status() ->
 refresh() ->
     gen_server:call(?SERVER, refresh).
 
-input(Json) ->
-    gen_server:call(?SERVER, {input, Json}).
+set_weight(WeightInfo) ->
+    gen_server:call(?SERVER, {set_weight, WeightInfo}).
+
+set_weight_by_type(Type, WeightInfo) ->
+    gen_server:call(?SERVER, {set_weight_by_type, Type, WeightInfo}).
 
 weights() ->
     gen_server:call(?SERVER, weights).
@@ -61,14 +64,23 @@ set_refresh_interval(Interval) when is_integer(Interval) andalso Interval > 0 ->
 init(Args) ->
     {conn_open_mf, {OpenM, OpenF}} = lists:keyfind(conn_open_mf, 1, Args),
     {conn_close_mf, {CloseM, CloseF}} = lists:keyfind(conn_close_mf, 1, Args),
-    {ok, #state{conn_open_fun=fun OpenM:OpenF/0, conn_close_fun=fun CloseM:CloseF/1}, 0}.
+    {ok, #state{weights=[{block, []}, {manifest, []}],
+                conn_open_fun=fun OpenM:OpenF/0, conn_close_fun=fun CloseM:CloseF/1},
+     0}.
 
 handle_call(status, _From, #state{failed_count=FailedCount} = State) ->
     {reply, {ok, [{interval, refresh_interval()}, {failed_count, FailedCount}]}, State};
 handle_call(weights, _From, #state{weights = Weights} = State) ->
     {reply, {ok, Weights}, State};
-handle_call({input, Json}, _From, State) ->
-    case input(Json, State) of
+handle_call({set_weight, WeightInfo}, _From, State) ->
+    case set_weight(WeightInfo, State) of
+        {ok, NewWeights} ->
+            {reply, {ok, NewWeights}, State#state{weights=NewWeights}};
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
+    end;
+handle_call({set_weight_by_type, Type, WeightInfo}, _From, State) ->
+    case set_weight(Type, WeightInfo, State) of
         {ok, NewWeights} ->
             {reply, {ok, NewWeights}, State#state{weights=NewWeights}};
         {error, Reason} ->
@@ -76,8 +88,8 @@ handle_call({input, Json}, _From, State) ->
     end;
 handle_call(refresh, _From, State) ->
     case fetch_weights(State) of
-        {ok, WeightInfoList, NewState} ->
-            {reply, {ok, WeightInfoList}, NewState};
+        {ok, _WeightInfoList, NewState} ->
+            {reply, ok, NewState};
         {error, Reason, NewState} ->
             {reply, {error, Reason}, NewState}
     end;
@@ -143,77 +155,27 @@ schedule(State) ->
     Ref = erlang:send_after(IntervalMSec, self(), refresh_by_timer),
     State#state{timer_ref = Ref}.
 
-input(Json, State) ->
-    case json_to_weight_info_list(Json) of
-        {ok, WeightInfoList} ->
-            update_weight_info(WeightInfoList, State);
-        {error, Reason} ->
-            {error, Reason}
-    end.
+set_weight(WeightInfo, #state{weights = Weights} = State) ->
+    NewWeights = [{Type, update_or_add_weight(WeightInfo, WeighInfoList)} ||
+                     {Type, WeighInfoList} <- Weights],
+    update_weight_info(NewWeights, State).
 
-json_to_weight_info_list({struct, JSON}) ->
-    case json_to_weight_info_list(JSON, []) of
-        {ok, WeightInfoList} -> verify_weight_info_list_input(WeightInfoList);
-        {error, Reason} -> {error, Reason}
-    end.
+set_weight(Type, WeightInfo, #state{weights = Weights} = State) ->
+    NewWeights =
+        case lists:keytake(Type, 1, Weights) of
+            false ->
+                [{Type, [WeightInfo]} | Weights];
+            {value, {Type, WeighInfoList}, OtherWeights} ->
+                [{Type, update_or_add_weight(WeightInfo, WeighInfoList)} |
+                    OtherWeights]
+        end,
+    update_weight_info(NewWeights, State).
 
-json_to_weight_info_list([], WeightInfoList) ->
-    {ok, WeightInfoList};
-json_to_weight_info_list([{TypeBin, Bags} | Rest], WeightInfoList) ->
-    case TypeBin of
-        <<"manifest">> ->
-            json_to_weight_info_list(manifest, Bags, Rest, WeightInfoList);
-        <<"block">> ->
-            json_to_weight_info_list(block, Bags, Rest, WeightInfoList);
-        _ ->
-            {error, {bad_request, TypeBin}}
-    end.
-
-json_to_weight_info_list(Type, Bags, RestTypes, WeightInfoList) ->
-    case json_to_weight_info_list_by_type(Type, Bags) of
-        {ok, WeightInfoListPerType} ->
-            json_to_weight_info_list(RestTypes, [WeightInfoListPerType | WeightInfoList]);
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-json_to_weight_info_list_by_type(Type, Bags) ->
-    json_to_weight_info_list_by_type(Type, Bags, []).
-
-json_to_weight_info_list_by_type(Type, [], WeightInfoList) ->
-    {ok, {Type, WeightInfoList}};
-json_to_weight_info_list_by_type(Type, [Bag | Rest], WeightInfoList) ->
-    case json_to_weight_info(Bag) of
-        {ok, WeightInfo} ->
-            json_to_weight_info_list_by_type(Type, Rest, [WeightInfo | WeightInfoList]);
-        {error, Reason} ->
-            {error, Reason}
-    end.
-
-json_to_weight_info({struct, Bag}) ->
-    json_to_weight_info(Bag, #weight_info{}).
-
-json_to_weight_info([], #weight_info{bag_id=Id, weight=Weight} = WeightInfo)
-  when Id =/= undefined andalso Weight =/= undefined ->
-    {ok, WeightInfo};
-json_to_weight_info([], WeightInfo) ->
-    {error, {bad_request, WeightInfo}};
-json_to_weight_info([{<<"id">>, Id} | Rest], WeightInfo)
-  when is_binary(Id) ->
-    json_to_weight_info(Rest, WeightInfo#weight_info{bag_id = Id});
-json_to_weight_info([{<<"weight">>, Weight} | Rest], WeightInfo)
-  when is_integer(Weight) andalso Weight >= 0 ->
-    json_to_weight_info(Rest, WeightInfo#weight_info{weight = Weight});
-json_to_weight_info([{<<"free">>, Free} | Rest], WeightInfo) ->
-    json_to_weight_info(Rest, WeightInfo#weight_info{free = Free});
-json_to_weight_info([{<<"total">>, Total} | Rest], WeightInfo) ->
-    json_to_weight_info(Rest, WeightInfo#weight_info{total = Total});
-json_to_weight_info(Json, _WeightInfo) ->
-    {error, {bad_request, Json}}.
-
-verify_weight_info_list_input(WeightInfoList) ->
-    %% TODO implement verify logic or consistency checks
-    {ok, WeightInfoList}.
+update_or_add_weight(#weight_info{bag_id=BagId}=WeightInfo,
+                     WeighInfoList) ->
+    OtherBags = lists:keydelete(BagId, #weight_info.bag_id, WeighInfoList),
+    lager:log(warning, self(), "OtherBags: ~p~n", [OtherBags]),
+    [WeightInfo | OtherBags].
 
 %% Connect to Riak cluster and overwrite weights at {riak-cs-bag, weight}
 update_weight_info(WeightInfoList, #state{conn_open_fun=OpenFun, conn_close_fun=CloseFun}) ->

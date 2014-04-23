@@ -20,8 +20,8 @@
 
 -record(state, {
           initialized = false :: boolean(),
-          blocks = [] :: [{riak_cs_bag:pool_key(), riak_cs_bag:weight_info()}],
-          manifests = [] :: [{riak_cs_bag:pool_key(), riak_cs_bag:weight_info()}]
+          block = [] :: [{riak_cs_bag:pool_key(), riak_cs_bag:weight_info()}],
+          manifest = [] :: [{riak_cs_bag:pool_key(), riak_cs_bag:weight_info()}]
          }).
 
 start_link() ->
@@ -45,9 +45,9 @@ handle_call({choose_bag, Type}, _From, #state{initialized = true} = State)
   when Type =:= block orelse Type =:= manifest ->
     Choice = case Type of
                  block ->
-                     choose_bag_by_weight(State#state.blocks);
+                     choose_bag_by_weight(State#state.block);
                  manifest ->
-                     choose_bag_by_weight(State#state.manifests)
+                     choose_bag_by_weight(State#state.manifest)
              end,
     case Choice of
         {ok, BagId} ->
@@ -58,9 +58,9 @@ handle_call({choose_bag, Type}, _From, #state{initialized = true} = State)
 handle_call({choose_bag, _Type}, _From, #state{initialized = false} = State) ->
     {reply, {error, not_initialized}, State};
 handle_call(status, _From, #state{initialized=Initialized, 
-                                  blocks=Blocks, manifests=Manifests} = State) ->
+                                  block=BlockWeights, manifest=ManifestWeights} = State) ->
     {reply, {ok, [{initialized, Initialized},
-                  {blocks, Blocks}, {manifests, Manifests}]}, State};
+                  {block, BlockWeights}, {manifest, ManifestWeights}]}, State};
 handle_call(Request, _From, State) ->
     {reply, {error, {unknown_request, Request}}, State}.
 
@@ -111,9 +111,9 @@ update_weight_state([], State) ->
 update_weight_state([{Type, WeightsForType} | Rest], State) ->
     NewState = case Type of
                    block ->
-                       State#state{blocks = WeightsForType};
+                       State#state{block = WeightsForType};
                    manifest ->
-                       State#state{manifests = WeightsForType}
+                       State#state{manifest = WeightsForType}
                end,
     update_weight_state(Rest, NewState).
 
