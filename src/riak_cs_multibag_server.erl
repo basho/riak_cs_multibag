@@ -39,6 +39,8 @@ status() ->
     gen_server:call(?SERVER, status).
 
 init([]) ->
+    %% Recieve weights as soon as possible after restart
+    riak_cs_multibag_weight_updater:maybe_refresh(),
     {ok, #state{}}.
 
 handle_call({choose_bag, Type}, _From, #state{initialized = true} = State)
@@ -96,8 +98,14 @@ choose_bag_by_weight([]) ->
 choose_bag_by_weight(WeightInfoList) ->
     %% TODO: SumOfWeights can be stored in state
     SumOfWeights = lists:sum([Weight || #weight_info{weight = Weight} <- WeightInfoList]),
-    Point = random:uniform(SumOfWeights),
-    choose_bag_by_weight(Point, WeightInfoList).
+    case SumOfWeights of
+        0 ->
+            %% Zero is special for transition from single bag, see README
+            {ok, undefined};
+        _ ->
+            Point = random:uniform(SumOfWeights),
+            choose_bag_by_weight(Point, WeightInfoList)
+    end.
 
 %% Always "1 =< Point" holds, bag_id with weight=0 never selected.
 choose_bag_by_weight(Point, [#weight_info{bag_id = BagId, weight = Weight} | _WeightInfoList])

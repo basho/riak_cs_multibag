@@ -9,7 +9,7 @@
 
 -export([start_link/1]).
 -export([status/0, set_weight/1, set_weight_by_type/2, refresh/0, weights/0]).
--export([refresh_interval/0, set_refresh_interval/1]).
+-export([maybe_refresh/0, refresh_interval/0, set_refresh_interval/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
@@ -42,6 +42,12 @@ status() ->
 
 refresh() ->
     gen_server:call(?SERVER, refresh).
+
+maybe_refresh() ->
+    case whereis(?SERVER) of
+        undefined -> ok;
+        _ -> refresh()
+    end.
 
 set_weight(WeightInfo) ->
     gen_server:call(?SERVER, {set_weight, WeightInfo}).
@@ -174,7 +180,6 @@ set_weight(Type, WeightInfo, #state{weights = Weights} = State) ->
 update_or_add_weight(#weight_info{bag_id=BagId}=WeightInfo,
                      WeighInfoList) ->
     OtherBags = lists:keydelete(BagId, #weight_info.bag_id, WeighInfoList),
-    lager:log(warning, self(), "OtherBags: ~p~n", [OtherBags]),
     [WeightInfo | OtherBags].
 
 %% Connect to Riak cluster and overwrite weights at {riak-cs-bag, weight}
