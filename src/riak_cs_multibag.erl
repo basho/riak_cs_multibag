@@ -61,17 +61,16 @@ pool_specs(MasterPoolConfig) ->
 %% Translate bag ID to pool name.
 %% 'undefined' in second argument means buckets and manifests were stored
 %% under single bag configuration.
--spec pool_name_for_bag(pool_type(), bag_id()) -> atom().
+-spec pool_name_for_bag(pool_type(), bag_id()) -> {ok, atom()} | {error, term()}.
 pool_name_for_bag(Type, undefined) ->
-    default_bag_id(Type);
+    {ok, default_bag_id(Type)};
 pool_name_for_bag(Type, BagId) when is_binary(BagId) ->
     case ets:lookup(?ETS_TAB, {Type, BagId}) of
         [] ->
-            %% TODO: Misconfiguration? Should throw error?
-            %% Another possibility is number of bags are reduced.
-            undefined;
+            %% Misconfiguration
+            {error, {no_pool, Type, BagId}};
         [#pool{name = Name}] ->
-            Name
+            {ok, Name}
     end.
 
 -spec default_bag_id(pool_type()) -> undefined | bag_id().
