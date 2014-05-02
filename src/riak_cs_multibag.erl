@@ -62,8 +62,8 @@ pool_specs(MasterPoolConfig) ->
 %% 'undefined' in second argument means buckets and manifests were stored
 %% under single bag configuration.
 -spec pool_name_for_bag(pool_type(), bag_id()) -> {ok, atom()} | {error, term()}.
-pool_name_for_bag(Type, undefined) ->
-    {ok, default_bag_id(Type)};
+pool_name_for_bag(_Type, undefined) ->
+    {ok, undefined};
 pool_name_for_bag(Type, BagId) when is_binary(BagId) ->
     case ets:lookup(?ETS_TAB, {Type, BagId}) of
         [] ->
@@ -71,20 +71,6 @@ pool_name_for_bag(Type, BagId) when is_binary(BagId) ->
             {error, {no_pool, Type, BagId}};
         [#pool{name = Name}] ->
             {ok, Name}
-    end.
-
--spec default_bag_id(pool_type()) -> undefined | bag_id().
-default_bag_id(Type) ->
-    case application:get_env(riak_cs, default_bag) of
-        undefined ->
-            undefined;
-        {ok, DefaultBags} ->
-            case lists:keyfind(Type, 1, DefaultBags) of
-                false ->
-                    undefined;
-                {Type, BagId} ->
-                    list_to_binary(BagId)
-            end
     end.
 
 %% Choose bag ID for new bucket or new manifest

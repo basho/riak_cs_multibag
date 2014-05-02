@@ -132,7 +132,7 @@ refresh_by_timer(State) ->
             {error, Reason, State2}
     end.
 
-%% Connect to default cluster and GET weight information
+%% Connect to master cluster and GET weight information
 fetch_weights(#state{conn_open_fun=OpenFun, conn_close_fun=CloseFun} = State) ->
     case OpenFun() of
         {ok, Riakc} ->
