@@ -48,18 +48,19 @@ confirm() ->
     NewInNewContent = rand_content(),
     erlcloud_s3:put_object(?NEW_BUCKET, ?NEW_KEY_IN_NEW, NewInNewContent, UserConfig),
 
-    [BagMaster, BagB, BagC] = RiakNodes,
     assert_whole_content(?OLD_BUCKET, ?OLD_KEY_IN_OLD, OldInOldContent, UserConfig),
     assert_whole_content(?OLD_BUCKET, ?NEW_KEY_IN_OLD, NewInOldContent, UserConfig),
     assert_whole_content(?NEW_BUCKET, ?NEW_KEY_IN_NEW, NewInNewContent, UserConfig),
 
     %% TODO: s3 list for two buckets.
-    [BagMaster, BagB, BagC] = RiakNodes,
+    [BagA, BagB, BagC] = RiakNodes,
 
     rtcs_bag:assert_object_in_expected_bag(?OLD_BUCKET, ?OLD_KEY_IN_OLD, normal,
-                                           RiakNodes, [BagMaster], [BagMaster]),
+                                           RiakNodes, [BagA], [BagA]),
     rtcs_bag:assert_object_in_expected_bag(?OLD_BUCKET, ?NEW_KEY_IN_OLD, normal,
-                                           RiakNodes, [BagMaster], [BagC]),
+                                           RiakNodes, [BagA], [BagC]),
+    rtcs_bag:assert_object_in_expected_bag(?NEW_BUCKET, ?NEW_KEY_IN_NEW, normal,
+                                           RiakNodes, [BagB], [BagC]),
     rtcs_bag:assert_object_in_expected_bag(?NEW_BUCKET, ?NEW_KEY_IN_NEW, normal,
                                            RiakNodes, [BagB], [BagC]),
     pass.
@@ -87,7 +88,7 @@ transition_to_multibag_configuration(AdminConfig, NodeList) ->
                     rtcs:start_cs(N)
             end, NodeList),
     [ok = rt:wait_until_pingable(CSNode) || {CSNode, _RiakNode} <- NodeList],
-    bag_input(),
+    rtcs_bag:set_weights(weights()),
     ok.
 
 multibag_config() ->
@@ -95,21 +96,11 @@ multibag_config() ->
         [{bags, [{"bag-A", "127.0.0.1", 10017},
                  {"bag-B", "127.0.0.1", 10027},
                  {"bag-C", "127.0.0.1", 10037}]}],
-    [{cs, rtcs:cs_config([], MBConf)}].
+    [{cs, rtcs_bag:cs_config([], MBConf)}].
 
 weights() ->
-    [
-     {<<"manifest">>, [
-                       [{<<"id">>, <<"bag-B">>}, {<<"weight">>, 100}]
-                      ]},
-     {<<"block">>, [
-                    [{<<"id">>, <<"bag-C">>}, {<<"weight">>, 100}]
-                   ]}
-    ].
-
-bag_input() ->
-    InputRes = rtcs:bag_input(1, mochijson2:encode(weights())),
-    lager:info("riak-cs-mc input result: ~s", [InputRes]).
+    [{manifest, "bag-B", 100},
+     {block,    "bag-C", 100}].
 
 assert_whole_content(Bucket, Key, ExpectedContent, Config) ->
     Obj = erlcloud_s3:get_object(Bucket, Key, Config),

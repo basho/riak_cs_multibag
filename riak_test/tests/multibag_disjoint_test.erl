@@ -31,7 +31,7 @@
 
 confirm() ->
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup1x1x1(multibag_config()),
-    bag_input(),
+    rtcs_bag:set_weights(weights()),
     lager:info("User is valid on the cluster, and has no buckets"),
     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(UserConfig)),
 
@@ -50,26 +50,16 @@ multibag_config() ->
         [{bags, [{"bag-A", "127.0.0.1", 10017},
                  {"bag-B", "127.0.0.1", 10027},
                  {"bag-C", "127.0.0.1", 10037}]}],
-    [{cs, rtcs:cs_config([], MBConf)}].
+    [{cs, rtcs_bag:cs_config([], MBConf)}].
 
 weights() ->
-    [
-     {<<"manifest">>, [
-                       [{<<"id">>, <<"bag-B">>}, {<<"weight">>, 100}]
-                      ]},
-     {<<"block">>, [
-                    [{<<"id">>, <<"bag-C">>}, {<<"weight">>, 100}]
-                   ]}
-    ].
-
-bag_input() ->
-    InputRes = rtcs:bag_input(1, mochijson2:encode(weights())),
-    lager:info("riak-cs-mc input result: ~s", [InputRes]).
+    [{manifest, "bag-B", 100},
+     {block,    "bag-C", 100}].
 
 assert_object_in_expected_bag(RiakNodes, UserConfig, UploadType) ->
     {Bucket, Key, Content} = upload(UserConfig, UploadType),
     assert_whole_content(Bucket, Key, Content, UserConfig),
-    [_MasterBag, BagB, BagC] = RiakNodes,
+    [_BagA, BagB, BagC] = RiakNodes,
     rtcs_bag:assert_object_in_expected_bag(Bucket, Key, UploadType,
                                            RiakNodes, [BagB], [BagC]),
     ok.

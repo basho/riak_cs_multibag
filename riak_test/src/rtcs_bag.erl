@@ -24,6 +24,36 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("riak_cs.hrl").
 
+%% Setup utilities
+
+cs_config(UserExtra, MultiBagConf) ->
+    rtcs:cs_config(UserExtra) ++
+        [{riak_cs_multibag, MultiBagConf}].
+
+set_weights(Weights) ->
+    [bag_weight(1, Kind, BagId, Weight) || {Kind, BagId, Weight} <- Weights].
+
+multibagcmd(Path, N, Args) ->
+    lists:flatten(io_lib:format("~s-multibag ~s", [rtcs:riakcs_binpath(Path, N), Args])).
+
+bag_weight(N, Kind, BagId, Weight) ->
+    SubCmd = case Kind of
+                 all ->      "weight";
+                 manifest -> "weight-manifest";
+                 block ->    "weight-block"
+             end,
+    Cmd = multibagcmd(rt_config:get(rtcs:cs_current()), N,
+                             io_lib:format("~s ~s ~B", [SubCmd, BagId, Weight])),
+    lager:info("Running ~s", [Cmd]),
+    rt:cmd(Cmd).
+
+bag_refresh(N) ->
+    Cmd = multibagcmd(rt_config:get(rtcs:cs_current()), N, "refresh"),
+    lager:info("Running ~p", [Cmd]),
+    rt:cmd(Cmd).
+
+%% Assertion utilities
+
 assert_object_in_expected_bag(Bucket, Key, UploadType,
                               AllBags, ExpectedManifestBags, ExpectedBlockBags) ->
     {UUID, M} = assert_manifest_in_single_bag(Bucket, Key,
