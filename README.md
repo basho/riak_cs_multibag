@@ -1,4 +1,73 @@
-# riak_cs_multibag
+# Configuration and Operation for Riak CS's Multibag Functionality
+
+One can setup Riak CS system to to store manifests and blocks in
+multiple Riak clusters separately. With this functionality, Riak CS
+achieves scalability for total storage size.
+
+## Bag and bag ID
+
+Multibag support introduces new terminology "bag".
+
+A bag is a set of Riak Clusters those are interrelated by MDC repliction.
+- Without MDC replication, one bag is consists of one cluster.
+- With MDC replication, one bag can include several clusters.
+
+```
+
+         +------------------- bag-A ---------------------+
+         |                                               |
+         |   +-----------+              +-----------+    |
+         |   |           |              |           |    |
+         |   |  Cluster  |--------------|  Cluster  |    |
+         |   |           |              |           |    |
+         |   +-----------+              +-----------+    |
+         |                                               |
+         +-----------------------------------------------+
+
+         +------------------- bag-B ---------------------+
+         |                                               |
+         |   +-----------+              +-----------+    |
+         |   |           |              |           |    |
+         |   |  Cluster  |--------------|  Cluster  |    |
+         |   |           |              |           |    |
+         |   +-----------+              +-----------+    |
+         |                                               |
+         +-----------------------------------------------+
+
+```
+
+Bag ID is stored in bucket objects and manifest records.
+The bag ID in a bucket objects specifies the bag which holds all manifests
+in the bucket. Similarly, the bag ID in a manifest tells the bag which holds
+all the blocks for the manifest.
+
+The logic to choose bag ID for new buckets or new manifests are (somewhat)
+randomized one with weights.
+Weights are specified by operators for each bag.
+
+## Objects and Bags
+
+There is one special bag, the master bag.
+The master bag is specified by `riak_ip` and `riak_port` in `riak_cs`
+app section.
+
+The master bag stores following objects
+- users
+- buckets
+- results of storage calculation
+- results of access statistics
+
+Manifests and blocks are distributed to each bags with following
+conditions.
+
+1. Manifests which belongs to a single bucket are stored in
+   the same bag. The bag ID for it is recorded in the bucket object.
+2. Blocks of a single manifests (not key, but manifest) are
+   stored in the same bag. The bag ID for it is recored in the
+   manifest.
+
+Each bag also has its own GC bucket. In deleting objects, manifests
+will go into the GC bucket of the same bag as they belong.
 
 ## Configuration for multibug
 
@@ -54,6 +123,10 @@ bag-A 127.0.0.1:10017
 bag-C 127.0.0.1:10037
 ```
 
+Note: In order to use master bag to store manifests or blocks, add its
+connection information also in the `bags` list as well as `riak_ip` and
+`riak_port`.
+
 ## Set, show, refresh weight information
 
 By using `riak-cs-multibag` script, one can set, list, refresh weight information.
@@ -86,45 +159,56 @@ riak-cs-multibag refresh
 
 ## Transition from single bag to multibag
 
-While rolling upgrading Riak CS nodes, there are two kinds of mixture and
-we should treat them well, without service shutdown.
+First, upgrade and restart stanchion to the version with multibag support
+beforehand.
+Then follow the steps below to transit from single bag to multibag.
 
-1. Mixture of CS versions with/without multibag support
-2. Mixture of configuration of connections to every bags
-
-Therefore two contstraints arise.
-
-1. No use of `bag_id` until every CS node is upgraded.
-2. No use of bags other than master until each CS nodes has appropriate
-   configuraion of connections.
-
-To fullfil these constraings, take "zero weights" state as special one.
-If the sum of weights is zero, `riak_cs_multibag_server:choose_bag/1`
-returns `undefined` regardless of `bags` configuraion.
-The `undefined` value makes Riak CS use master bag to store objects.
-
-Steps to transit from single bag to multibag is as follows.
 (Time flows from top to bottom)
 
 ```
-| CS1            | CS2      | weights   | master   | bag-B          | bag-C          |
-|----------------+----------+-----------+----------+----------------+----------------|
-| normal         | normal   | N/A       | running  | unused         | unused         |
-|                |          |           |          | start          | start          |
-| stop           |          |           |          |                |                |
-| upgrade        |          |           |          |                |                |
-| add bags       |          |           |          |                |                |
-| start          |          |           |          |                |                |
-|                |          | set zeros |          | NOT YET chosen | NOT YET chosen |
-| !KEEP OFFLINE! |          |           |          |                |                |
-| !UNTIL HERE!   |          |           |          |                |                |
-|                |          |           |          |                |                |
-| can be online  |          |           |          |                |                |
-|                | stop     |           |          |                |                |
-|                | upgrade  |           |          |                |                |
-|                | add bags |           |          |                |                |
-|                | start    |           |          |                |                |
-|                |          | set any   | chosen   | chosen         | chosen         |
+| CS 1           | CS 2     | weights   | master  | bag-B        | bag-C        |
+|----------------+----------+-----------+---------+--------------+--------------|
+| normal         | normal   | N/A       | running | unused       | unused       |
+|                |          |           | used    | start        | start        |
+| stop           |          |           |         |              |              |
+| upgrade        |          |           |         |              |              |
+| add bags       |          |           |         |              |              |
+| start          |          |           |         |              |              |
+|                |          | set zeros |         | NOT YET used | NOT YET used |
+| !KEEP OFFLINE! |          |           |         |              |              |
+| !UNTIL HERE!   |          |           |         |              |              |
+|                |          |           |         |              |              |
+| can be online  |          |           |         |              |              |
+|                | stop     |           |         |              |              |
+|                | upgrade  |           |         |              |              |
+|                | add bags |           |         |              |              |
+|                | start    |           |         |              |              |
+|                |          |           |         |              |              |
+|                |          | set any   | used    | used         | used         |
 ```
 
-TODO: include upgrade and restart of stanchion
+## Adding bags
+
+Adding more bags to already multibag-enabled system is rather straightforward.
+First set up new Riak clusters for bags and add thier connection information
+to Riak CS's `bags` configuration.
+Finally, set weights of new bags by command. That's all.
+
+```
+| CS 1     | CS 2     | weights      | master  | existing bags | new bags |
+|----------+----------+--------------+---------+---------------+----------|
+| running  | running  |              | running | running       | N/A      |
+|          |          |              | used    | used          |          |
+|          |          |              |         |               | start    |
+|          |          |              |         |               | setup    |
+| stop     |          |              |         |               |          |
+| upgrade  |          |              |         |               |          |
+| add bags |          |              |         |               |          |
+| start    |          |              |         |               |          |
+|          | stop     |              |         |               |          |
+|          | upgrade  |              |         |               |          |
+|          | add bags |              |         |               |          |
+|          | start    |              |         |               |          |
+|          |          |              |         |               |          |
+|          |          | set new bags |         | used          | used     |
+```
