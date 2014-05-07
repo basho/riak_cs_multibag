@@ -8,7 +8,7 @@ achieves scalability for total storage size.
 
 Multibag support introduces new terminology "bag".
 
-A bag is a set of Riak Clusters those are interrelated by MDC repliction.
+A bag is a set of Riak Clusters those are interrelated by MDC replication.
 - Without MDC replication, one bag is consists of one cluster.
 - With MDC replication, one bag can include several clusters.
 
@@ -63,13 +63,13 @@ conditions.
 1. Manifests which belongs to a single bucket are stored in
    the same bag. The bag ID for it is recorded in the bucket object.
 2. Blocks of a single manifests (not key, but manifest) are
-   stored in the same bag. The bag ID for it is recored in the
+   stored in the same bag. The bag ID for it is recorded in the
    manifest.
 
 Each bag also has its own GC bucket. In deleting objects, manifests
 will go into the GC bucket of the same bag as they belong.
 
-## Configuration for multibug
+## Configuration for multibag
 
 The master bag connection information is specified by `riak_ip` and
 `riak_port` in `riak_cs` app section as single bag configuration.
@@ -101,7 +101,7 @@ If you set weights and need immediate refresh, use a `refresh` command
                 {"bag-C", "127.0.0.1", 10037}
                ]},
 
-              %% How often weight infromation are fetched from Riak.
+              %% How often weight information are fetched from Riak.
               %% Unit is in seconds, 900 means 15 minutes.
               {weight_refresh_interval, 900}
               ]},
@@ -190,7 +190,7 @@ Then follow the steps below to transit from single bag to multibag.
 ## Adding bags
 
 Adding more bags to already multibag-enabled system is rather straightforward.
-First set up new Riak clusters for bags and add thier connection information
+First set up new Riak clusters for bags and add their connection information
 to Riak CS's `bags` configuration.
 Finally, set weights of new bags by command. That's all.
 
