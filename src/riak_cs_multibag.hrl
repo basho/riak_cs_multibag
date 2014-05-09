@@ -5,5 +5,5 @@
 -record(weight_info, {
           bag_id :: riak_cs_multibag:bag_id(),
           weight :: non_neg_integer(),
-          opts = [] :: proplists:proplists()
+          opts = [] :: proplists:proplist()   %% Not used
           }).

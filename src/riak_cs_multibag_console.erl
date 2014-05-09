@@ -35,7 +35,7 @@ weight([BagId]) ->
 weight([BagId, Weight]) ->
     ?SAFELY(set_weight(BagId, Weight), "Set weight for the bag");
 weight(_) ->
-    io:foramt("Invalid arguments"),
+    io:format("Invalid arguments"),
     error.
 
 'weight-manifest'(Args) ->
@@ -62,7 +62,7 @@ weight_by_type(Type, [BagId, Weight]) ->
     ?SAFELY(set_weight(Type, BagId, Weight),
             io_lib:format("Set ~s weight for the bag", [Type]));
 weight_by_type(_Type, _) ->
-    io:foramt("Invalid arguments"),
+    io:format("Invalid arguments"),
     error.
 
 list_bags() ->
@@ -80,8 +80,9 @@ show_weights(Status) ->
 
 show_weights(Type, Status) ->
     WeightInfoList = proplists:get_value(Type, Status),
-    [io:format("~s (~s): ~B~n", [BagId, Type, Weight]) ||
-        #weight_info{bag_id=BagId, weight=Weight} <- WeightInfoList].
+    _ = [io:format("~s (~s): ~B~n", [BagId, Type, Weight]) ||
+            #weight_info{bag_id=BagId, weight=Weight} <- WeightInfoList],
+    ok.
 
 show_weights_for_bag(BagId, Status) ->
     show_weights_for_bag(manifest, BagId, Status),
@@ -90,9 +91,10 @@ show_weights_for_bag(BagId, Status) ->
 show_weights_for_bag(Type, InputBagIdStr, Status) ->
     InputBagId = list_to_binary(InputBagIdStr),
     WeightInfoList = proplists:get_value(Type, Status),
-    [io:format("~s (~s): ~B~n", [BagId, Type, Weight]) ||
-        #weight_info{bag_id=BagId, weight=Weight} <- WeightInfoList,
-        BagId =:= InputBagId].
+    _ = [io:format("~s (~s): ~B~n", [BagId, Type, Weight]) ||
+            #weight_info{bag_id=BagId, weight=Weight} <- WeightInfoList,
+            BagId =:= InputBagId],
+    ok.
 
 set_weight(BagIdStr, WeightStr) ->
     BagId = list_to_binary(BagIdStr),

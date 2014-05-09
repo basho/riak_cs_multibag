@@ -1,4 +1,9 @@
-%% @doc The server process which periodically retreives information of multi bags
+%% @doc Keep weight information and choose bag ID before allocating
+%% for each new bucket or manifest.
+
+%% The argument of choose_bag_by_weight/1, `Type' is one of
+%% - `manifest' for a new bucket
+%% - `block' for a new manifest
 
 -module(riak_cs_multibag_server).
 
@@ -20,14 +25,14 @@
 
 -record(state, {
           initialized = false :: boolean(),
-          block = [] :: [{riak_cs_bag:pool_key(), riak_cs_bag:weight_info()}],
-          manifest = [] :: [{riak_cs_bag:pool_key(), riak_cs_bag:weight_info()}]
+          block = [] :: [riak_cs_multibag:weight_info()],
+          manifest = [] :: [riak_cs_multibag:weight_info()]
          }).
 
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
--spec choose_bag(manifest | block) -> {ok, riak_cs_bag:bag_id()} |
+-spec choose_bag(manifest | block) -> {ok, riak_cs_multibag:bag_id()} |
                                       {error, term()}.
 choose_bag(Type) ->
     gen_server:call(?SERVER, {choose_bag, Type}).
@@ -44,18 +49,14 @@ init([]) ->
     {ok, #state{}}.
 
 handle_call({choose_bag, Type}, _From, #state{initialized = true} = State)
-  when Type =:= block orelse Type =:= manifest ->
+  when Type =:= manifest orelse Type =:= block ->
     Choice = case Type of
-                 block ->
-                     choose_bag_by_weight(State#state.block);
-                 manifest ->
-                     choose_bag_by_weight(State#state.manifest)
+                 block    -> choose_bag_by_weight(State#state.block);
+                 manifest -> choose_bag_by_weight(State#state.manifest)
              end,
     case Choice of
-        {ok, BagId} ->
-            {reply, {ok, BagId}, State};
-        {error, no_bag} ->
-            {reply, {error, no_bag}, State}
+        {ok, BagId}     -> {reply, {ok, BagId}, State};
+        {error, no_bag} -> {reply, {error, no_bag}, State}
     end;
 handle_call({choose_bag, _Type}, _From, #state{initialized = false} = State) ->
     {reply, {error, not_initialized}, State};

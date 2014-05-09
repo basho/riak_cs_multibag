@@ -10,7 +10,6 @@
 
 -define(ETS_TAB, ?MODULE).
 -record(pool, {key :: pool_key(),
-               type :: pool_type(), % for match spec
                address :: string(),
                port :: non_neg_integer(),
                name :: atom(),
@@ -18,21 +17,13 @@
 
 -include("riak_cs_multibag.hrl").
 
-%% These types are defined also in riak_cs, but for compilation
-%% declare them again
 -type bag_id() :: undefined | binary().
 -type pool_type() :: request_pool | bucket_list_pool.
-
 -type pool_key() :: {pool_type(), bag_id()}.
 -type weight_info() :: #weight_info{}.
 
--ifdef(TEST).
--compile(export_all).
--include_lib("eunit/include/eunit.hrl").
--endif.
-
 maybe_init(MasterPoolConfigs, Bags) ->
-    init_ets(),
+    _Tid = init_ets(),
     ok = store_pool_records(MasterPoolConfigs, Bags),
     ok.
 
@@ -42,13 +33,13 @@ process_specs() ->
                  permanent, 5000, worker, [riak_cs_multibag_server]},
     %% Pass connection open/close information not to "explicitly" depends on riak_cs
     %% and to make unit test easier.
-    %% TODO: better to pass these MF's by argument process_specs
+    %% TODO: Pass these MF's by argument process_specs
     WeightUpdaterArgs = [{conn_open_mf, {riak_cs_utils, riak_connection}},
                          {conn_close_mf, {riak_cs_utils, close_riak_connection}}],
     WeightUpdater = {riak_cs_multibag_weight_updater,
                      {riak_cs_multibag_weight_updater, start_link,
                       [WeightUpdaterArgs]},
-                     permanent, 5000, worker, [riak_cs_bag_worker]},
+                     permanent, 5000, worker, [riak_cs_multibag_weight_updater]},
     [BagServer, WeightUpdater].
 
 %% Return pool specs from application configuration.
@@ -58,29 +49,33 @@ pool_specs(MasterPoolConfig) ->
     {ok, Bags} = application:get_env(riak_cs_multibag, bags),
     maybe_init(MasterPoolConfig, Bags),
     [record_to_spec(P) || P <- ets:tab2list(?ETS_TAB)].
+
+record_to_spec(#pool{address=Address, port=Port, name=Name, sizes=Sizes}) ->
+    {Name, Sizes, {Address, Port}}.
+
 %% Translate bag ID to pool name.
 %% 'undefined' in second argument means buckets and manifests were stored
-%% under single bag configuration.
+%% under single bag configuration, i.e. to the master bag.
 -spec pool_name_for_bag(pool_type(), bag_id()) -> {ok, atom()} | {error, term()}.
-pool_name_for_bag(_Type, undefined) ->
+pool_name_for_bag(_PoolType, undefined) ->
     {ok, undefined};
-pool_name_for_bag(Type, BagId) when is_binary(BagId) ->
-    case ets:lookup(?ETS_TAB, {Type, BagId}) of
+pool_name_for_bag(PoolType, BagId) when is_binary(BagId) ->
+    case ets:lookup(?ETS_TAB, {PoolType, BagId}) of
         [] ->
             %% Misconfiguration
-            {error, {no_pool, Type, BagId}};
+            {error, {no_pool, PoolType, BagId}};
         [#pool{name = Name}] ->
             {ok, Name}
     end.
 
 %% Choose bag ID for new bucket or new manifest
 -spec choose_bag_id(manifet | block) -> bag_id().
-choose_bag_id(Type) ->
-    {ok, BagId} = riak_cs_multibag_server:choose_bag(Type),
+choose_bag_id(AllocType) ->
+    {ok, BagId} = riak_cs_multibag_server:choose_bag(AllocType),
     BagId.
 
 init_ets() ->
-    ets:new(?ETS_TAB, [{keypos, 2}, named_table, protected,
+    ets:new(?ETS_TAB, [{keypos, #pool.key}, named_table, protected,
                        {read_concurrency, true}]).
 
 store_pool_records(MasterPoolConfig, Bags) ->
@@ -97,25 +92,21 @@ store_pool_records(OriginalMasterConfigs, [Bag | _] = Bags, [MasterConfig | Rest
 store_pool_record({BagId, Address, Port}, {PoolType, Sizes}) ->
     Name = list_to_atom(lists:flatten(io_lib:format("~s_~s", [PoolType, BagId]))),
     true = ets:insert(?ETS_TAB, #pool{key = {PoolType, list_to_binary(BagId)},
-                                      type = PoolType,
                                       address = Address,
                                       port = Port,
                                       name = Name,
                                       sizes = Sizes}).
 
-record_to_spec(#pool{address=Address, port=Port, name=Name, sizes=Sizes}) ->
-    {Name, Sizes, {Address, Port}}.
-
 list_pool() ->
-    [{Name, Type, BagId, [{address, Address}, {port, Port}]} ||
-        #pool{key={Type, BagId}, name=Name, address=Address, port=Port} <-
+    [{Name, PoolType, BagId, [{address, Address}, {port, Port}]} ||
+        #pool{key={PoolType, BagId}, name=Name, address=Address, port=Port} <-
             ets:tab2list(?ETS_TAB)].
 
-list_pool(PoolType) ->
-    [{Name, Type, BagId, [{address, Address}, {port, Port}]} ||
-        #pool{key={Type, BagId}, name=Name, address=Address, port=Port} <-
+list_pool(TargetPoolType) ->
+    [{Name, PoolType, BagId, [{address, Address}, {port, Port}]} ||
+        #pool{key={PoolType, BagId}, name=Name, address=Address, port=Port} <-
             ets:tab2list(?ETS_TAB),
-        Type =:= PoolType].
+        PoolType =:= TargetPoolType].
 
 %% For Debugging
 
@@ -124,11 +115,3 @@ tab_name() ->
 
 tab_info() ->
     ets:tab2list(?ETS_TAB).
-
--ifdef(TEST).
-%% ===================================================================
-%% EUnit tests
-%% ===================================================================
-
--endif.
-

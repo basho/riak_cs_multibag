@@ -1,7 +1,9 @@
 %% @doc The worker process to update weight information
-%% periodically or when triggered by command.
-%% Because GET/PUT may block, e.g. network failure, updating
-%% task is done by the dedicated process.
+%%
+%% Triggered periodically by timer or manually by commands.
+%% Because GET/PUT operation for Riak may block, e.g. network
+%%  failure, updating and refreshing is done by this separate
+%%  process rather than doing by `riak_cs_multibag_server'.
 
 -module(riak_cs_multibag_weight_updater).
 
@@ -24,9 +26,8 @@
           timer_ref :: reference() | undefined,
           %% Consecutive refresh failures
           failed_count = 0 :: non_neg_integer(),
-          weights :: [{riak_cs_multibag:pool_type(),
-                       [{riak_cs_multibag:pool_key(),
-                         riak_cs_multibag:weight_info()}]}],
+          weights :: [{manifest | block,
+                       [riak_cs_multibag:weight_info()]}],
           conn_open_fun :: fun(),
           conn_close_fun :: fun()
          }).
