@@ -25,15 +25,20 @@
 -export([confirm/0]).
 -include_lib("eunit/include/eunit.hrl").
 
+-define(TEST_BUCKET_CREATE_DELETE, "riak-test-bucket-create-delete").
+
 -define(TEST_BUCKET,   "riak-test-bucket").
 -define(KEY_NORMAL,    "key_normal").
 -define(KEY_MULTIPART, "key_multipart").
 
 confirm() ->
-    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} = rtcs:setup1x1x1(multibag_config()),
+    {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} =
+        rtcs:setup1x1x1(rtcs_bag:configs(bags())),
     rtcs_bag:set_weights(weights()),
     lager:info("User is valid on the cluster, and has no buckets"),
     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(UserConfig)),
+
+    assert_bucket_create_delete_twice(UserConfig),
 
     lager:info("creating bucket ~p", [?TEST_BUCKET]),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?TEST_BUCKET, UserConfig)),
@@ -43,18 +48,24 @@ confirm() ->
 
     assert_object_in_expected_bag(RiakNodes, UserConfig, normal),
     assert_object_in_expected_bag(RiakNodes, UserConfig, multipart),
+
     pass.
 
-multibag_config() ->
-    MBConf =
-        [{bags, [{"bag-A", "127.0.0.1", 10017},
-                 {"bag-B", "127.0.0.1", 10027},
-                 {"bag-C", "127.0.0.1", 10037}]}],
-    [{cs, rtcs_bag:cs_config([], MBConf)}].
+bags() ->
+    [{"bag-A", "127.0.0.1", 10017},
+     {"bag-B", "127.0.0.1", 10027},
+     {"bag-C", "127.0.0.1", 10037}].
 
 weights() ->
     [{manifest, "bag-B", 100},
      {block,    "bag-C", 100}].
+
+assert_bucket_create_delete_twice(UserConfig) ->
+    ?assertEqual(ok, erlcloud_s3:create_bucket(?TEST_BUCKET_CREATE_DELETE, UserConfig)),
+    ?assertEqual(ok, erlcloud_s3:delete_bucket(?TEST_BUCKET_CREATE_DELETE, UserConfig)),
+    ?assertEqual(ok, erlcloud_s3:create_bucket(?TEST_BUCKET_CREATE_DELETE, UserConfig)),
+    ?assertEqual(ok, erlcloud_s3:delete_bucket(?TEST_BUCKET_CREATE_DELETE, UserConfig)),
+    ok.
 
 assert_object_in_expected_bag(RiakNodes, UserConfig, UploadType) ->
     {Bucket, Key, Content} = upload(UserConfig, UploadType),

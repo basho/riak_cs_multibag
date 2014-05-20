@@ -29,6 +29,7 @@
 %% -include_lib("riak_cs/include/riak_cs.hrl").
 
 -define(CS_CURRENT, <<"build_paths.cs_current">>).
+-define(STANCHION_CURRENT, <<"build_paths.stanchion_current">>).
 
 -define(OLD_BUCKET,     "multi-bag-transition-old").
 -define(NEW_BUCKET,     "multi-bag-transition-new").
@@ -38,10 +39,11 @@
 
 confirm() ->
     %% setup single bag cluster at first
-    {UserConfig, {RiakNodes, CSNodes, _Stanchion}} = rtcs:setup1x1x1(),
+    {UserConfig, {RiakNodes, CSNodes, StanchionNode}} = rtcs:setup1x1x1(),
     OldInOldContent = setup_old_bucket_and_key(UserConfig, ?OLD_BUCKET, ?OLD_KEY_IN_OLD),
 
-    transition_to_multibag_configuration(UserConfig, lists:zip(CSNodes, RiakNodes)),
+    transition_to_multibag_configuration(
+      UserConfig, lists:zip(CSNodes, RiakNodes), StanchionNode),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?NEW_BUCKET, UserConfig)),
     NewInOldContent = rand_content(),
     erlcloud_s3:put_object(?OLD_BUCKET, ?NEW_KEY_IN_OLD, NewInOldContent, UserConfig),
@@ -75,28 +77,32 @@ setup_old_bucket_and_key(UserConfig, Bucket, Key) ->
 rand_content() ->
     crypto:rand_bytes(4 * 1024 * 1024).
 
-transition_to_multibag_configuration(AdminConfig, NodeList) ->
-    Config = multibag_config(),
+transition_to_multibag_configuration(AdminConfig, NodeList, StanchionNode) ->
+    Configs = rtcs_bag:configs(bags()),
     #aws_config{access_key_id=K, secret_access_key=S} = AdminConfig,
     rtcs:stop_cs_and_stanchion_nodes(NodeList),
+    rtcs:stop_stanchion(),
     rt:pmap(fun({_CSNode, RiakNode}) ->
                     N = rt_cs_dev:node_id(RiakNode),
                     rtcs:update_cs_config(rt_config:get(?CS_CURRENT),
                                           N,
-                                          proplists:get_value(cs, Config),
+                                          proplists:get_value(cs, Configs),
                                           {K, S}),
                     rtcs:start_cs(N)
             end, NodeList),
+    rtcs:update_stanchion_config(rt_config:get(?STANCHION_CURRENT),
+                                 proplists:get_value(stanchion, Configs),
+                                 {K, S}),
+    rtcs:start_stanchion(),
     [ok = rt:wait_until_pingable(CSNode) || {CSNode, _RiakNode} <- NodeList],
+    rt:wait_until_pingable(StanchionNode),
     rtcs_bag:set_weights(weights()),
     ok.
 
-multibag_config() ->
-    MBConf =
-        [{bags, [{"bag-A", "127.0.0.1", 10017},
-                 {"bag-B", "127.0.0.1", 10027},
-                 {"bag-C", "127.0.0.1", 10037}]}],
-    [{cs, rtcs_bag:cs_config([], MBConf)}].
+bags() ->
+    [{"bag-A", "127.0.0.1", 10017},
+     {"bag-B", "127.0.0.1", 10027},
+     {"bag-C", "127.0.0.1", 10037}].
 
 weights() ->
     [{manifest, "bag-B", 100},

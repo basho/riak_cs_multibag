@@ -26,9 +26,10 @@
 
 %% Setup utilities
 
-cs_config(UserExtra, MultiBagConf) ->
-    rtcs:cs_config(UserExtra) ++
-        [{riak_cs_multibag, MultiBagConf}].
+configs(MultiBags) ->
+    rtcs:configs(
+      [{cs, rtcs:cs_config([], [{riak_cs_multibag, [{bags, MultiBags}]}])},
+       {stanchion, rtcs:stanchion_config([{bags, MultiBags}])}]).
 
 set_weights(Weights) ->
     [bag_weight(1, Kind, BagId, Weight) || {Kind, BagId, Weight} <- Weights].
