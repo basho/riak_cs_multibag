@@ -127,6 +127,27 @@ Note: In order to use master bag to store manifests or blocks, add its
 connection information also in the `bags` list as well as `riak_ip` and
 `riak_port`.
 
+## Configuration for Stanchion
+
+Stanchion should be configured to include connection pool information.
+When you switch multibag from single bag systemor or add bags,
+Stanchion should have the new configuration **first**, then riak_cs nodes
+have similar changes.
+
+Add `bags` like above riak_cs configuration to Stanchion's `app.config`.
+
+```
+ {stanchion, [
+              ...
+              %% Connection pools for multiple bags
+              {bags,
+               [
+                {"bag-A", "127.0.0.1", 10017},
+                {"bag-B", "127.0.0.1", 10027},
+                {"bag-C", "127.0.0.1", 10037}
+               ]},
+```
+
 ## Set, show, refresh weight information
 
 By using `riak-cs-multibag` script, one can set, list, refresh weight information.
@@ -159,8 +180,8 @@ riak-cs-multibag refresh
 
 ## Transition from single bag to multibag
 
-First, upgrade and restart stanchion to the version with multibag support
-beforehand.
+First, upgrade, confugure and restart stanchion to the version with
+multibag support beforehand.
 Then follow the steps below to transit from single bag to multibag.
 
 (Time flows from top to bottom)
