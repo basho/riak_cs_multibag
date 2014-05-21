@@ -13,6 +13,34 @@ configs(MultiBags) ->
       [{cs, rtcs:cs_config([], [{riak_cs_multibag, [{bags, MultiBags}]}])},
        {stanchion, rtcs:stanchion_config([{bags, MultiBags}])}]).
 
+%% BagFlavor is `disjoint' only for now
+flavored_setup(NumNodes, {multibag, BagFlavor}, Configs) ->
+    MultiBags = bags(BagFlavor),
+    [Riak, Cs, Stanchion] = [proplists:get_value(T, Configs) ||
+                                T <- [riak, cs, stanchion]],
+    UpdatedStanchion = lists:keystore(
+                         stanchion, 1, Stanchion,
+                         {stanchion,
+                          proplists:get_value(stanchion, Stanchion) ++
+                              [{bags, MultiBags}]}),
+    UpdatedConfigs = [{riak, Riak},
+                      {cs, Cs ++ [{riak_cs_multibag, [{bags, MultiBags}]}]},
+                      {stanchion, UpdatedStanchion}],
+    SetupResult = rtcs:setupNx1x1(NumNodes, UpdatedConfigs),
+    set_weights(weights(BagFlavor)),
+    SetupResult.
+
+bags(disjoint) ->
+    [{"bag-A", "127.0.0.1", 10017},
+     {"bag-B", "127.0.0.1", 10027},
+     {"bag-C", "127.0.0.1", 10037}].
+
+weights(disjoint) ->
+    [{manifest, "bag-B", 100},
+     {block,    "bag-C", 100}].
+
+set_weights(BagFlavor) when is_atom(BagFlavor) ->
+    set_weights(weights(BagFlavor));
 set_weights(Weights) ->
     [bag_weight(1, Kind, BagId, Weight) || {Kind, BagId, Weight} <- Weights].
 
