@@ -2,32 +2,27 @@
 
 -module(riak_cs_multibag).
 
--export([process_specs/0, pool_specs/1, pool_name_for_bag/2, choose_bag_id/1]).
--export([list_pool/0, list_pool/1]).
+-export([process_specs/0, choose_bag_id/1]).
+-export([bags/0]).
 -export([tab_name/0, tab_info/0]).
+-export([bag_id_from_bucket/1]).
 
--export_type([pool_key/0, pool_type/0, bag_id/0, weight_info/0]).
+-export_type([weight_info/0]).
 
 -define(ETS_TAB, ?MODULE).
--record(pool, {key :: pool_key(),
-               address :: string(),
-               port :: non_neg_integer(),
-               name :: atom(),
-               sizes :: {non_neg_integer(), non_neg_integer()}}).
+
+-record(bag, {bag_id :: bag_id(),
+              pool_name :: atom(),
+              address :: string(),
+              port :: non_neg_integer()}).
 
 -include("riak_cs_multibag.hrl").
+-include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
--type bag_id() :: undefined | binary().
--type pool_type() :: request_pool | bucket_list_pool.
--type pool_key() :: {pool_type(), bag_id()}.
 -type weight_info() :: #weight_info{}.
 
-maybe_init(MasterPoolConfigs, Bags) ->
-    _Tid = init_ets(),
-    ok = store_pool_records(MasterPoolConfigs, Bags),
-    ok.
-
 process_specs() ->
+    maybe_init(),
     BagServer = {riak_cs_multibag_server,
                  {riak_cs_multibag_server, start_link, []},
                  permanent, 5000, worker, [riak_cs_multibag_server]},
@@ -42,71 +37,74 @@ process_specs() ->
                      permanent, 5000, worker, [riak_cs_multibag_weight_updater]},
     [BagServer, WeightUpdater].
 
-%% Return pool specs from application configuration.
-%% This function assumes that it is called ONLY ONCE at initialization.
--spec pool_specs(term()) -> [{atom(), {non_neg_integer(), non_neg_integer()}}].
-pool_specs(MasterPoolConfig) ->
-    {ok, Bags} = application:get_env(riak_cs_multibag, bags),
-    maybe_init(MasterPoolConfig, Bags),
-    [record_to_spec(P) || P <- ets:tab2list(?ETS_TAB)].
-
-record_to_spec(#pool{address=Address, port=Port, name=Name, sizes=Sizes}) ->
-    {Name, Sizes, {Address, Port}}.
-
-%% Translate bag ID to pool name.
-%% 'undefined' in second argument means buckets and manifests were stored
-%% under single bag configuration, i.e. to the master bag.
--spec pool_name_for_bag(pool_type(), bag_id()) -> {ok, atom()} | {error, term()}.
-pool_name_for_bag(_PoolType, undefined) ->
-    {ok, undefined};
-pool_name_for_bag(PoolType, BagId) when is_binary(BagId) ->
-    case ets:lookup(?ETS_TAB, {PoolType, BagId}) of
-        [] ->
-            %% Misconfiguration
-            {error, {no_pool, PoolType, BagId}};
-        [#pool{name = Name}] ->
-            {ok, Name}
-    end.
-
 %% Choose bag ID for new bucket or new manifest
 -spec choose_bag_id(manifet | block) -> bag_id().
 choose_bag_id(AllocType) ->
     {ok, BagId} = riak_cs_multibag_server:choose_bag(AllocType),
     BagId.
 
-init_ets() ->
-    ets:new(?ETS_TAB, [{keypos, #pool.key}, named_table, protected,
-                       {read_concurrency, true}]).
-
-store_pool_records(MasterPoolConfig, Bags) ->
-    store_pool_records(MasterPoolConfig, Bags, MasterPoolConfig).
-
-store_pool_records(_, [], _) ->
-    ok;
-store_pool_records(OriginalMasterConfigs, [_|RestBags], []) ->
-    store_pool_records(OriginalMasterConfigs, RestBags, OriginalMasterConfigs);
-store_pool_records(OriginalMasterConfigs, [Bag | _] = Bags, [MasterConfig | RestMasterConfigs]) ->
-    store_pool_record(Bag, MasterConfig),
-    store_pool_records(OriginalMasterConfigs, Bags, RestMasterConfigs).
-
-store_pool_record({BagId, Address, Port}, {PoolType, Sizes}) ->
-    Name = list_to_atom(lists:flatten(io_lib:format("~s_~s", [PoolType, BagId]))),
-    true = ets:insert(?ETS_TAB, #pool{key = {PoolType, list_to_binary(BagId)},
-                                      address = Address,
-                                      port = Port,
-                                      name = Name,
-                                      sizes = Sizes}).
-
-list_pool() ->
-    [{Name, PoolType, BagId, [{address, Address}, {port, Port}]} ||
-        #pool{key={PoolType, BagId}, name=Name, address=Address, port=Port} <-
+-spec bags() -> [{bag_id(), Address::string(), Port::non_neg_integer()}].
+bags() ->
+    maybe_init(),
+    [{BagId, Address, Port} ||
+        #bag{bag_id=BagId, pool_name=_Name, address=Address, port=Port} <-
             ets:tab2list(?ETS_TAB)].
 
-list_pool(TargetPoolType) ->
-    [{Name, PoolType, BagId, [{address, Address}, {port, Port}]} ||
-        #pool{key={PoolType, BagId}, name=Name, address=Address, port=Port} <-
-            ets:tab2list(?ETS_TAB),
-        PoolType =:= TargetPoolType].
+%% Extract bag ID from `riakc_obj' in moss.buckets
+-spec bag_id_from_bucket(riakc_obj:riakc_obj()) -> bag_id().
+bag_id_from_bucket(BucketObj) ->
+    Contents = riakc_obj:get_contents(BucketObj),
+    bag_id_from_contents(Contents).
+
+maybe_init() ->
+    case catch ets:info(?ETS_TAB) of
+        undefined -> init();
+        _ -> ok
+    end.
+
+init() ->
+    _Tid = init_ets(),
+    {ok, Bags} = application:get_env(riak_cs_multibag, bags),
+    {MasterAddress, MasterPort} = riak_cs_riakc_pool_worker:riak_host_port(),
+    ok = store_pool_record({"master", MasterAddress, MasterPort}),
+    ok = store_pool_records(Bags),
+    ok.
+
+init_ets() ->
+    ets:new(?ETS_TAB, [{keypos, #bag.bag_id},
+                       named_table, protected, {read_concurrency, true}]).
+
+store_pool_records([]) ->
+    ok;
+store_pool_records([Bag | RestBags]) ->
+    ok = store_pool_record(Bag),
+    store_pool_records(RestBags).
+
+store_pool_record({BagIdStr, Address, Port}) ->
+    BagId = list_to_binary(BagIdStr),
+    Name = riak_cs_riak_client:pbc_pool_name(BagId),
+    true = ets:insert_new(?ETS_TAB, #bag{bag_id = BagId,
+                                         pool_name = Name,
+                                         address = Address,
+                                         port = Port}),
+    ok.
+
+bag_id_from_contents([]) ->
+    undefined;
+bag_id_from_contents([{MD, _} | Contents]) ->
+    case bag_id_from_meta(dict:fetch(?MD_USERMETA, MD)) of
+        undefined ->
+            bag_id_from_contents(Contents);
+        BagId ->
+            BagId
+    end.
+
+bag_id_from_meta([]) ->
+    undefined;
+bag_id_from_meta([{?MD_BAG, Value} | _]) ->
+    binary_to_term(Value);
+bag_id_from_meta([_MD | MDs]) ->
+    bag_id_from_meta(MDs).
 
 %% For Debugging
 

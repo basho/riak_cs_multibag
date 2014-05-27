@@ -7,3 +7,7 @@
           weight :: non_neg_integer(),
           opts = [] :: proplists:proplist()   %% Not used
           }).
+
+-define(MD_BAG, <<"X-Rcs-Bag">>).
+
+-type bag_id() :: undefined | binary().

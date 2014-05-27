@@ -9,20 +9,25 @@
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
 
 -define(SERVER, ?MODULE).
+-define(DEFAULT_BAG, undefined).
 
+%% Bag ID `undefined' represents objects were stored in single bag
+%% configuration, and we use the default bag for the objects.
+%% (currently, "default bag" means "master bag".)
+%% To avoid confusion between `undefined's in record attributes
+%% and ones for "default bag", set fresh values to `uninitialized'
+%% in this record.
 -record(state, {
-          master_pbc,
-          manifest_pbc,
-          block_pbc,
+          master_pbc   = uninitialized :: uninitialized | pid(),
+          manifest_pbc = uninitialized :: uninitialized | pid(),
+          block_pbc    = uninitialized :: uninitialized | pid(),
 
-          manifest_bag,
-          block_bag,
+          manifest_bag = uninitialized :: uninitialized | ?DEFAULT_BAG | binary(),
+          block_bag    = uninitialized :: uninitialized | ?DEFAULT_BAG | binary(),
 
-          bucket_name,
-          bucket_obj,
-          manifest,
-
-          use_pool = true %% TODO Use riakc_pb_socket directly?
+          bucket_name  = uninitialized :: uninitialized | binary(),
+          bucket_obj   = uninitialized :: uninitialized | term(), % riakc_obj:riakc_obj()
+          manifest     = uninitialized :: uninitialized | term()  % lfs_manifest()
          }).
 
 init([]) ->
@@ -77,10 +82,8 @@ handle_call(manifest_pbc, _From, State) ->
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-handle_call({set_manifest_bag, ManifestBagId}, _From, State) ->
-    %% TODO: When ManifestBagId is undefined, the "undefined" indicates "master".
-    %% `undefined' for initial value (which means uninitialized, not default)
-    %% is wrong, double meaning, confusing.
+handle_call({set_manifest_bag, ManifestBagId}, _From, State)
+  when ManifestBagId =:= ?DEFAULT_BAG orelse is_binary(ManifestBagId) ->
     case ensure_manifest_pbc(State#state{manifest_bag=ManifestBagId}) of
         {ok, NewState} ->
             {reply, ok, NewState};
@@ -103,7 +106,7 @@ handle_call(block_pbc, _From, State) ->
     end;
 
 handle_call(Request, _From, State) ->
-    Reply = {error, {'NOT_IMPLEMENTED_YET, THANK YOU!!!', Request}},
+    Reply = {error, {invalid_request, Request}},
     {reply, Reply, State}.
 
 handle_cast(_Msg, State) ->
@@ -136,7 +139,7 @@ do_cleanup(State) ->
 
 stop_pbcs([]) ->
     ok;
-stop_pbcs([{undefined, _BagId} | Rest]) ->
+stop_pbcs([{uninitialized, _BagId} | Rest]) ->
     stop_pbcs(Rest);
 stop_pbcs([{Pbc, BagId} | Rest]) when is_pid(Pbc) ->
     riak_cs_utils:close_riak_connection(pool_name(BagId), Pbc),
@@ -167,10 +170,8 @@ ensure_master_pbc(#state{} = State) ->
 ensure_manifest_pbc(#state{manifest_pbc = ManifestPbc} = State)
   when is_pid(ManifestPbc) ->
     {ok, State};
-ensure_manifest_pbc(#state{manifest_bag = default, master_pbc=MasterPbc} = State) ->
+ensure_manifest_pbc(#state{manifest_bag = ?DEFAULT_BAG, master_pbc=MasterPbc} = State) ->
     {ok, State#state{manifest_pbc=MasterPbc}};
-ensure_manifest_pbc(#state{manifest_bag = master} = State) ->
-    ensure_manifest_pbc(State#state{manifest_bag = <<"master">>});
 ensure_manifest_pbc(#state{manifest_bag = BagId} = State)
   when is_binary(BagId) ->
     case riak_cs_utils:riak_connection(pool_name(BagId)) of
@@ -179,19 +180,15 @@ ensure_manifest_pbc(#state{manifest_bag = BagId} = State)
         {error, Reason} ->
             {error, Reason}
     end;
-ensure_manifest_pbc(#state{bucket_obj = BucketObj} = State) ->
-    ManifestBagId = riak_cs_multibag_registrar:bag_id_from_bucket(BucketObj),
-    case ManifestBagId of
-        undefined ->
-            ensure_manifest_pbc(State#state{manifest_bag = default});
-        Bin when is_binary(Bin) ->
-            ensure_manifest_pbc(State#state{manifest_bag = ManifestBagId})
-    end.
+ensure_manifest_pbc(#state{bucket_obj = BucketObj} = State)
+  when BucketObj =/= uninitialized ->
+    ManifestBagId = riak_cs_multibag:bag_id_from_bucket(BucketObj),
+    ensure_manifest_pbc(State#state{manifest_bag = ManifestBagId}).
 
 ensure_block_pbc(#state{block_pbc = BlockPbc} = State)
   when is_pid(BlockPbc) ->
     {ok, State};
-ensure_block_pbc(#state{block_bag = default, master_pbc=MasterPbc} = State) ->
+ensure_block_pbc(#state{block_bag = ?DEFAULT_BAG, master_pbc=MasterPbc} = State) ->
     {ok, State#state{block_pbc=MasterPbc}};
 ensure_block_pbc(#state{block_bag = BagId} = State)
   when is_binary(BagId) ->
@@ -202,16 +199,9 @@ ensure_block_pbc(#state{block_bag = BagId} = State)
             {error, Reason}
     end;
 ensure_block_pbc(#state{manifest=Manifest} = State)
-  when Manifest =/= undefined ->
-    BlockBagId = riak_cs_multibag_registrar:bag_id_from_manifest(Manifest),
-    case BlockBagId of
-        undefined ->
-            ensure_block_pbc(State#state{block_bag=default});
-        Bin when is_binary(Bin) ->
-            ensure_block_pbc(State#state{block_bag=BlockBagId})
-    end.
+  when Manifest =/= uninitialized ->
+    BlockBagId = riak_cs_mb_helper:bag_id_from_manifest(Manifest),
+    ensure_block_pbc(State#state{block_bag=BlockBagId}).
 
-pool_name(master) ->
-    request_pool_master;
 pool_name(BagId) ->
-    list_to_atom(lists:flatten(io_lib:format("request_pool_~s", [BagId]))).
+    riak_cs_riak_client:pbc_pool_name(BagId).
