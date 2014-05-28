@@ -188,7 +188,7 @@ update_weight_info(WeightInfoList, #state{conn_open_fun=OpenFun, conn_close_fun=
     case OpenFun() of
         {ok, Riakc} ->
             try
-                get_weight_info(Riakc, WeightInfoList)
+                update_weight_info1(Riakc, WeightInfoList)
             after
                 CloseFun(Riakc)
             end;
@@ -196,7 +196,7 @@ update_weight_info(WeightInfoList, #state{conn_open_fun=OpenFun, conn_close_fun=
             E
     end.
 
-get_weight_info(Riakc, WeightInfoList) ->
+update_weight_info1(Riakc, WeightInfoList) ->
     Current = case riakc_pb_socket:get(Riakc, ?WEIGHT_BUCKET, ?WEIGHT_KEY) of
                   {error, notfound} ->
                       {ok, riakc_obj:new(?WEIGHT_BUCKET, ?WEIGHT_KEY)};
