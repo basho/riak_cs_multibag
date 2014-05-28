@@ -66,12 +66,10 @@ weight_by_type(_Type, _) ->
     error.
 
 list_bags() ->
-    [print_bag(Name, Type, BagId, Opts) ||
-        {Name, Type, BagId, Opts} <- riak_cs_multibag:list_pool(request_pool)].
+    [print_bag(BagId, Address, Port) ||
+        {BagId, Address, Port} <- riak_cs_multibag:bags()].
 
-print_bag(_Name, _Type, BagId, Opts) ->
-    {address, Address} = lists:keyfind(address, 1, Opts),
-    {port, Port} =  lists:keyfind(port, 1, Opts),
+print_bag(BagId, Address, Port) ->
     io:format("~s ~s:~B~n", [BagId, Address, Port]).
 
 show_weights(Status) ->
@@ -137,7 +135,7 @@ with_status(Fun) ->
 
 all_bag_ids() ->
     [BagId ||
-        {_Name, _Type, BagId, _Opts} <- riak_cs_multibag:list_pool(request_pool)].
+        {BagId, _Address, _Port} <- riak_cs_multibag:bags()].
 
 handle_result(ok) ->
     ok;
