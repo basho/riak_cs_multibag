@@ -14,8 +14,10 @@ configs(MultiBags) ->
        {stanchion, rtcs:stanchion_config([{bags, MultiBags}])}]).
 
 %% BagFlavor is `disjoint' only for now
-flavored_setup(NumNodes, {multibag, BagFlavor}, Configs) ->
-    MultiBags = bags(BagFlavor),
+%% TODO: Other nodes than CS node 1 have wrong riak_pb_port configuration.
+flavored_setup(NumNodes, {multibag, BagFlavor}, CustomConfigs) ->
+    Configs = rtcs:configs(CustomConfigs),
+    MultiBags = bags(NumNodes, BagFlavor),
     [Riak, Cs, Stanchion] = [proplists:get_value(T, Configs) ||
                                 T <- [riak, cs, stanchion]],
     UpdatedStanchion = lists:keystore(
@@ -31,9 +33,14 @@ flavored_setup(NumNodes, {multibag, BagFlavor}, Configs) ->
     SetupResult.
 
 bags(disjoint) ->
+    bags(1, disjoint).
+
+%% bag-A:NumNodes, bag-B:1node, bag-C:1node
+bags(NumNodes, disjoint) ->
+    PortOffset = NumNodes * 10 + 10017,
     [{"bag-A", "127.0.0.1", 10017},
-     {"bag-B", "127.0.0.1", 10027},
-     {"bag-C", "127.0.0.1", 10037}].
+     {"bag-B", "127.0.0.1", PortOffset},
+     {"bag-C", "127.0.0.1", PortOffset + 10}].
 
 weights(disjoint) ->
     [{manifest, "bag-B", 100},
@@ -43,6 +50,21 @@ set_weights(BagFlavor) when is_atom(BagFlavor) ->
     set_weights(weights(BagFlavor));
 set_weights(Weights) ->
     [bag_weight(1, Kind, BagId, Weight) || {Kind, BagId, Weight} <- Weights].
+
+%% CsBucket and CsKey may be needed if there are multiple bags for manifests (or blocks)
+pbc({multibag, disjoint}, ObjectKind, RiakNodes, _CsBucket, _CsKey)
+  when ObjectKind =/= manifest andalso ObjectKind =:= block ->
+    rt:pbc(hd(RiakNodes));
+pbc({multibag, disjoint}, ObjectKind, RiakNodes, _CsBucket, _CsKey) ->
+    [BagC, BagB | _RestNodes] = lists:reverse(RiakNodes),
+    case ObjectKind of
+        manifest -> rt:pbc(BagB);
+        block    -> rt:pbc(BagC)
+    end.
+
+pbc_start_link(Port) ->
+    {ok, Pid} = riakc_pb_socket:start_link("127.0.0.1", Port),
+    Pid.
 
 multibagcmd(Path, N, Args) ->
     lists:flatten(io_lib:format("~s-multibag ~s", [rtcs:riakcs_binpath(Path, N), Args])).
