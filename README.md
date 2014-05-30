@@ -236,3 +236,5 @@ Finally, set weights of new bags by command. That's all.
 |          |          |              |         |               |          |
 |          |          | set new bags |         | used          | used     |
 ```
+
+Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved.

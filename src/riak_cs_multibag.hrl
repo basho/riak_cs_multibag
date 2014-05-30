@@ -1,3 +1,5 @@
+%% Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved.
+
 %% Riak's bucket and key to store weight information
 -define(WEIGHT_BUCKET, <<"riak-cs-multibag">>).
 -define(WEIGHT_KEY,    <<"weight">>).

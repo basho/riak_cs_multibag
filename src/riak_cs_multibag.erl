@@ -1,3 +1,4 @@
+%% Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved.
 %% @doc Support multi Riak clusters in single Riak CS system
 
 -module(riak_cs_multibag).

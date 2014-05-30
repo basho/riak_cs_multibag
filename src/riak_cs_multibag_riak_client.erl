@@ -1,3 +1,5 @@
+%% Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved.
+
 -module(riak_cs_multibag_riak_client).
 
 -behaviour(gen_server).

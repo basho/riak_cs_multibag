@@ -1,3 +1,5 @@
+%% Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved.
+
 %% @doc The worker process to update weight information
 %%
 %% Triggered periodically by timer or manually by commands.

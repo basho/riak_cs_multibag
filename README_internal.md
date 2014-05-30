@@ -52,3 +52,5 @@ There would be complications and corner cases such as:
 - If operator stop MDC repl, what happens? The mappings should holds
   all ever-connected-cluster-at-least-once cluster IDs? (like
   `erlang:nodes(known)`)
+
+Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved.

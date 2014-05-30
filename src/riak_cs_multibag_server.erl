@@ -1,3 +1,5 @@
+%% Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved.
+
 %% @doc Keep weight information and choose bag ID before allocating
 %% for each new bucket or manifest.
 

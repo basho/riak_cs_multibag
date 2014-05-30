@@ -1,3 +1,5 @@
+%% Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved.
+
 %% @doc These functions are used by the riak-cs-bag command line script.
 
 -module(riak_cs_multibag_console).
