@@ -1,8 +1,8 @@
 # Configuration and Operation for Riak CS's Multibag Functionality
 
-One can setup Riak CS system to to store manifests and blocks in
+One can setup Riak CS system to store manifests and blocks in
 multiple Riak clusters separately. With this functionality, Riak CS
-achieves scalability for total storage size.
+achieves scalability in total storage size.
 
 ## Bag and bag ID
 
@@ -130,7 +130,7 @@ connection information also in the `bags` list as well as `riak_ip` and
 ## Configuration for Stanchion
 
 Stanchion should be configured to include connection pool information.
-When you switch multibag from single bag systemor or add bags,
+When you switch multibag from single bag system or add bags,
 Stanchion should have the new configuration **first**, then riak_cs nodes
 have similar changes.
 
@@ -180,33 +180,36 @@ riak-cs-multibag refresh
 
 ## Transition from single bag to multibag
 
-First, upgrade, confugure and restart stanchion to the version with
+First, upgrade, configure and restart stanchion to the version with
 multibag support beforehand.
 Then follow the steps below to transit from single bag to multibag.
 
 (Time flows from top to bottom)
 
 ```
-| CS 1           | CS 2     | weights   | master  | bag-B        | bag-C        |
-|----------------+----------+-----------+---------+--------------+--------------|
-| normal         | normal   | N/A       | running | unused       | unused       |
-|                |          |           | used    | start        | start        |
-| stop           |          |           |         |              |              |
-| upgrade        |          |           |         |              |              |
-| add bags       |          |           |         |              |              |
-| start          |          |           |         |              |              |
-|                |          | set zeros |         | NOT YET used | NOT YET used |
-| !KEEP OFFLINE! |          |           |         |              |              |
-| !UNTIL HERE!   |          |           |         |              |              |
-|                |          |           |         |              |              |
-| can be online  |          |           |         |              |              |
-|                | stop     |           |         |              |              |
-|                | upgrade  |           |         |              |              |
-|                | add bags |           |         |              |              |
-|                | start    |           |         |              |              |
-|                |          |           |         |              |              |
-|                |          | set any   | used    | used         | used         |
+| CS 1           | CS 2     | weights     | master  | bag-B        | bag-C        |
+|----------------+----------+-------------+---------+--------------+--------------|
+| normal         | normal   | N/A         | running | unused       | unused       |
+|                |          |             | used    | start        | start        |
+| stop           |          |             |         |              |              |
+| upgrade        |          |             |         |              |              |
+| add bags       |          |             |         |              |              |
+| start          |          |             |         |              |              |
+|                |          | set zeros(1)|         | NOT YET used | NOT YET used |
+| !KEEP OFFLINE! |          |             |         |              |              |
+| !UNTIL HERE!   |          |             |         |              |              |
+|                |          |             |         |              |              |
+| can be online  |          |             |         |              |              |
+|                | stop     |             |         |              |              |
+|                | upgrade  |             |         |              |              |
+|                | add bags |             |         |              |              |
+|                | start    |             |         |              |              |
+|                |          |             |         |              |              |
+|                |          | set any     | used    | used         | used         |
 ```
+
+(1) To set zeros to weights, execute `riak-cs-multibag weights <bag id> 0`
+    to at least one bag.
 
 ## Adding bags
 
