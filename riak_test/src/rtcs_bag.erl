@@ -13,8 +13,58 @@ configs(MultiBags) ->
       [{cs, rtcs:cs_config([], [{riak_cs_multibag, [{bags, MultiBags}]}])},
        {stanchion, rtcs:stanchion_config([{bags, MultiBags}])}]).
 
+%% BagFlavor is `disjoint' only for now
+%% TODO: Other nodes than CS node 1 have wrong riak_pb_port configuration.
+flavored_setup(NumNodes, {multibag, BagFlavor}, CustomConfigs) ->
+    Configs = rtcs:configs(CustomConfigs),
+    MultiBags = bags(NumNodes, BagFlavor),
+    [Riak, Cs, Stanchion] = [proplists:get_value(T, Configs) ||
+                                T <- [riak, cs, stanchion]],
+    UpdatedStanchion = lists:keystore(
+                         stanchion, 1, Stanchion,
+                         {stanchion,
+                          proplists:get_value(stanchion, Stanchion) ++
+                              [{bags, MultiBags}]}),
+    UpdatedConfigs = [{riak, Riak},
+                      {cs, Cs ++ [{riak_cs_multibag, [{bags, MultiBags}]}]},
+                      {stanchion, UpdatedStanchion}],
+    SetupResult = rtcs:setupNx1x1(NumNodes, UpdatedConfigs),
+    set_weights(weights(BagFlavor)),
+    SetupResult.
+
+bags(disjoint) ->
+    bags(1, disjoint).
+
+%% bag-A:NumNodes, bag-B:1node, bag-C:1node
+bags(NumNodes, disjoint) ->
+    PortOffset = NumNodes * 10 + 10017,
+    [{"bag-A", "127.0.0.1", 10017},
+     {"bag-B", "127.0.0.1", PortOffset},
+     {"bag-C", "127.0.0.1", PortOffset + 10}].
+
+weights(disjoint) ->
+    [{manifest, "bag-B", 100},
+     {block,    "bag-C", 100}].
+
+set_weights(BagFlavor) when is_atom(BagFlavor) ->
+    set_weights(weights(BagFlavor));
 set_weights(Weights) ->
     [bag_weight(1, Kind, BagId, Weight) || {Kind, BagId, Weight} <- Weights].
+
+%% CsBucket and CsKey may be needed if there are multiple bags for manifests (or blocks)
+pbc({multibag, disjoint}, Kind, RiakNodes, _CsBucket, _CsKey)
+  when Kind =/= objects andalso Kind =/= blocks ->
+    rt:pbc(hd(RiakNodes));
+pbc({multibag, disjoint}, ObjectKind, RiakNodes, _CsBucket, _CsKey) ->
+    [BagC, BagB | _RestNodes] = lists:reverse(RiakNodes),
+    case ObjectKind of
+        objects -> rt:pbc(BagB);
+        blocks  -> rt:pbc(BagC)
+    end.
+
+pbc_start_link(Port) ->
+    {ok, Pid} = riakc_pb_socket:start_link("127.0.0.1", Port),
+    Pid.
 
 multibagcmd(Path, N, Args) ->
     lists:flatten(io_lib:format("~s-multibag ~s", [rtcs:riakcs_binpath(Path, N), Args])).

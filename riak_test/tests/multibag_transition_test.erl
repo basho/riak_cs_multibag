@@ -21,7 +21,7 @@
 
 confirm() ->
     %% setup single bag cluster at first
-    {UserConfig, {RiakNodes, CSNodes, StanchionNode}} = rtcs:setup1x1x1(),
+    {UserConfig, {RiakNodes, CSNodes, StanchionNode}} = rtcs:setupNx1x1(1),
     OldInOldContent = setup_old_bucket_and_key(UserConfig, ?OLD_BUCKET, ?OLD_KEY_IN_OLD),
 
     transition_to_multibag_configuration(
@@ -78,17 +78,13 @@ transition_to_multibag_configuration(AdminConfig, NodeList, StanchionNode) ->
     rtcs:start_stanchion(),
     [ok = rt:wait_until_pingable(CSNode) || {CSNode, _RiakNode} <- NodeList],
     rt:wait_until_pingable(StanchionNode),
-    rtcs_bag:set_weights(weights()),
+    rtcs_bag:set_weights(rtcs_bag:weights(disjoint)),
     ok.
 
 bags() ->
     [{"bag-A", "127.0.0.1", 10017},
      {"bag-B", "127.0.0.1", 10027},
      {"bag-C", "127.0.0.1", 10037}].
-
-weights() ->
-    [{manifest, "bag-B", 100},
-     {block,    "bag-C", 100}].
 
 assert_whole_content(Bucket, Key, ExpectedContent, Config) ->
     Obj = erlcloud_s3:get_object(Bucket, Key, Config),

@@ -15,8 +15,9 @@
 
 confirm() ->
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} =
-        rtcs:setup1x1x1(rtcs_bag:configs(bags())),
-    rtcs_bag:set_weights(weights()),
+        rtcs:setupNx1x1(1, rtcs_bag:configs(rtcs_bag:bags(disjoint))),
+    rtcs_bag:set_weights(disjoint),
+
     lager:info("User is valid on the cluster, and has no buckets"),
     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(UserConfig)),
 
@@ -32,15 +33,6 @@ confirm() ->
     assert_object_in_expected_bag(RiakNodes, UserConfig, multipart),
 
     pass.
-
-bags() ->
-    [{"bag-A", "127.0.0.1", 10017},
-     {"bag-B", "127.0.0.1", 10027},
-     {"bag-C", "127.0.0.1", 10037}].
-
-weights() ->
-    [{manifest, "bag-B", 100},
-     {block,    "bag-C", 100}].
 
 assert_bucket_create_delete_twice(UserConfig) ->
     ?assertEqual(ok, erlcloud_s3:create_bucket(?TEST_BUCKET_CREATE_DELETE, UserConfig)),
