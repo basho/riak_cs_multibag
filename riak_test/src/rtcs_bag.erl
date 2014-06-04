@@ -52,14 +52,14 @@ set_weights(Weights) ->
     [bag_weight(1, Kind, BagId, Weight) || {Kind, BagId, Weight} <- Weights].
 
 %% CsBucket and CsKey may be needed if there are multiple bags for manifests (or blocks)
-pbc({multibag, disjoint}, ObjectKind, RiakNodes, _CsBucket, _CsKey)
-  when ObjectKind =/= manifest andalso ObjectKind =:= block ->
+pbc({multibag, disjoint}, Kind, RiakNodes, _CsBucket, _CsKey)
+  when Kind =/= objects andalso Kind =/= blocks ->
     rt:pbc(hd(RiakNodes));
 pbc({multibag, disjoint}, ObjectKind, RiakNodes, _CsBucket, _CsKey) ->
     [BagC, BagB | _RestNodes] = lists:reverse(RiakNodes),
     case ObjectKind of
-        manifest -> rt:pbc(BagB);
-        block    -> rt:pbc(BagC)
+        objects -> rt:pbc(BagB);
+        blocks  -> rt:pbc(BagC)
     end.
 
 pbc_start_link(Port) ->
