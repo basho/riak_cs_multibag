@@ -28,7 +28,8 @@ flavored_setup(NumNodes, {multibag, BagFlavor}, CustomConfigs) ->
     UpdatedConfigs = [{riak, Riak},
                       {cs, Cs ++ [{riak_cs_multibag, [{bags, MultiBags}]}]},
                       {stanchion, UpdatedStanchion}],
-    SetupResult = rtcs:setupNx1x1(NumNodes, UpdatedConfigs),
+    Singltons = 4,
+    SetupResult = rtcs:setupNxMsingles(NumNodes, Singltons, UpdatedConfigs),
     set_weights(weights(BagFlavor)),
     SetupResult.
 
@@ -40,11 +41,15 @@ bags(NumNodes, disjoint) ->
     PortOffset = NumNodes * 10 + 10017,
     [{"bag-A", "127.0.0.1", 10017},
      {"bag-B", "127.0.0.1", PortOffset},
-     {"bag-C", "127.0.0.1", PortOffset + 10}].
+     {"bag-C", "127.0.0.1", PortOffset + 10},
+     {"bag-D", "127.0.0.1", PortOffset + 20},
+     {"bag-E", "127.0.0.1", PortOffset + 30}].
 
 weights(disjoint) ->
     [{manifest, "bag-B", 100},
-     {block,    "bag-C", 100}].
+     {manifest, "bag-C", 100},
+     {block,    "bag-D", 100},
+     {block,    "bag-E", 100}].
 
 set_weights(BagFlavor) when is_atom(BagFlavor) ->
     set_weights(weights(BagFlavor));
@@ -52,15 +57,47 @@ set_weights(Weights) ->
     [bag_weight(1, Kind, BagId, Weight) || {Kind, BagId, Weight} <- Weights].
 
 %% CsBucket and CsKey may be needed if there are multiple bags for manifests (or blocks)
-pbc({multibag, disjoint}, Kind, RiakNodes, _CsBucket, _CsKey)
+pbc({multibag, disjoint}, Kind, RiakNodes, _Seed)
   when Kind =/= objects andalso Kind =/= blocks ->
     rt:pbc(hd(RiakNodes));
-pbc({multibag, disjoint}, ObjectKind, RiakNodes, _CsBucket, _CsKey) ->
-    [BagC, BagB | _RestNodes] = lists:reverse(RiakNodes),
-    case ObjectKind of
-        objects -> rt:pbc(BagB);
-        blocks  -> rt:pbc(BagC)
+pbc({multibag, disjoint}, ObjectKind, RiakNodes, Seed) ->
+    [BagE, BagD, BagC, BagB | _RestNodes] = lists:reverse(RiakNodes),
+    HighLow = high_low(Seed),
+    case {ObjectKind, HighLow} of
+        {objects, low}  -> rt:pbc(BagB);
+        {objects, high} -> rt:pbc(BagC);
+        {blocks,  low}  -> rt:pbc(BagD);
+        {blocks,  high} -> rt:pbc(BagE)
     end.
+
+%% Utility for two bags with 100 weight each.
+%% `low' means former bag (in binary order) and `high' does latter.
+high_low(Seed) ->
+    Point = sha_int(Seed) rem 200 + 1,
+    case Point of
+        _ when Point =< 100 -> low;
+        _                   -> high
+    end.
+
+%% Calculate SHA integer from seed.
+%% This logic depnds on `riak_cs_multibag_server' implementation.
+-spec sha_int(Seed::binary()) -> integer().
+sha_int({B, K, M}) when is_tuple(M) ->
+    sha_int({B, K, M?MANIFEST.uuid});
+sha_int({B, K, UUID}) ->
+    sha_int2({ensure_binary(B), ensure_binary(K), UUID});
+sha_int(Seed) ->
+    sha_int2(ensure_binary(Seed)).
+
+sha_int2(Seed) ->
+    SeedBin = term_to_binary(Seed),
+    <<SHA:160>> = rtcs:sha(SeedBin),
+    SHA.
+
+ensure_binary(V) when is_list(V) ->
+    list_to_binary(V);
+ensure_binary(V) when is_binary(V) ->
+    V.
 
 pbc_start_link(Port) ->
     {ok, Pid} = riakc_pb_socket:start_link("127.0.0.1", Port),
@@ -68,6 +105,14 @@ pbc_start_link(Port) ->
 
 multibagcmd(Path, N, Args) ->
     lists:flatten(io_lib:format("~s-multibag ~s", [rtcs:riakcs_binpath(Path, N), Args])).
+
+list_weight() ->
+    list_weight(1).
+
+list_weight(N) ->
+    Cmd = multibagcmd(rt_config:get(rtcs:cs_current()), N, io_lib:format("~s", [weight])),
+    lager:info("Running ~s", [Cmd]),
+    rt:cmd(Cmd).
 
 bag_weight(N, Kind, BagId, Weight) ->
     SubCmd = case Kind of
@@ -87,18 +132,10 @@ bag_refresh(N) ->
 
 %% Assertion utilities
 
-assert_object_in_expected_bag(Bucket, Key, UploadType,
-                              AllBags, ExpectedManifestBags, ExpectedBlockBags) ->
-    {UUID, M} = assert_manifest_in_single_bag(Bucket, Key,
-                                             ExpectedManifestBags,
-                                             AllBags -- ExpectedManifestBags),
-    ok = assert_block_in_single_bag(Bucket, {UUID, M}, UploadType,
-                                    ExpectedBlockBags, AllBags -- ExpectedBlockBags),
-    ok.
-
-assert_manifest_in_single_bag(Bucket, Key, ExpectedBags, NotExistingBags) ->
-    RiakBucket = <<"0o:", (stanchion_utils:md5(Bucket))/binary>>,
-    case assert_only_in_single_bag(ExpectedBags, NotExistingBags, RiakBucket, Key) of
+assert_manifest_in_single_bag(Bucket, Key, AllBags, ExpectedBag) ->
+    NotExistingBags = AllBags -- [ExpectedBag],
+    RiakBucket = <<"0o:", (rtcs:md5(Bucket))/binary>>,
+    case assert_only_in_single_bag(ExpectedBag, NotExistingBags, RiakBucket, Key) of
         {error, Reason} ->
             lager:error("assert_manifest_in_single_bag for ~w/~w error: ~p",
                         [Bucket, Key, Reason]),
@@ -108,38 +145,39 @@ assert_manifest_in_single_bag(Bucket, Key, ExpectedBags, NotExistingBags) ->
             {UUID, M}
     end.
 
-assert_block_in_single_bag(Bucket, {UUID, Manifest}, UploadType,
-                           ExpectedBags, NotExistingBags) ->
-    RiakBucket = <<"0b:", (stanchion_utils:md5(Bucket))/binary>>,
-    RiakKey = case UploadType of
-                  normal ->
-                      <<UUID/binary, 0:32>>;
-                  multipart ->
-                      %% Take UUID of the first block of the first part manifest
-                      MpM = proplists:get_value(multipart, Manifest?MANIFEST.props),
-                      PartUUID = (hd(MpM?MULTIPART_MANIFEST.parts))?PART_MANIFEST.part_id,
-                      <<PartUUID/binary, 0:32>>
-              end,
-    case assert_only_in_single_bag(ExpectedBags, NotExistingBags,
-                                   RiakBucket, RiakKey) of
+assert_block_in_single_bag(Bucket, Manifest, AllBags, ExpectedBag) ->
+    NotExistingBags = AllBags -- [ExpectedBag],
+    RiakBucket = <<"0b:", (rtcs:md5(Bucket))/binary>>,
+    UUIDForBlock = block_uuid(Manifest),
+    RiakKey = <<UUIDForBlock/binary, 0:32>>,
+    case assert_only_in_single_bag(ExpectedBag, NotExistingBags, RiakBucket, RiakKey) of
         {error, Reason} ->
-            lager:error("assert_block_in_single_bag for ~w/~w[~w] error: ~p",
-                        [Bucket, UUID, UploadType, Reason]),
-            {error, {Bucket, {UploadType, UUID, Manifest}, Reason}};
+            {_, Key} = Manifest?MANIFEST.bkey,
+            lager:error("assert_block_in_single_bag for ~w/~w [~w] error: ~p",
+                        [Bucket, Key, UUIDForBlock, Reason]),
+            {error, {Bucket, Key, UUIDForBlock}, Reason};
         _Object ->
             ok
     end.
 
+block_uuid(M) ->
+    case proplists:get_value(multipart, M?MANIFEST.props) of
+        undefined ->
+            M?MANIFEST.uuid;
+        MpM ->
+            %% Take UUID of the first block of the first part manifest
+            (hd(MpM?MULTIPART_MANIFEST.parts))?PART_MANIFEST.part_id
+    end.
 
--spec assert_only_in_single_bag(ExpectedBags::[binary()], NotExistingBags::[binary()],
+-spec assert_only_in_single_bag(ExpectedBag::binary(), NotExistingBags::[binary()],
                                 RiakBucket::binary(), RiakKey::binary()) ->
                                        riakc_obj:riakc_obj().
 %% Assert BKey
-%% - exists onc and only one bag in ExpectedBags and
-%% - does not exists in NotExistingBags.
+%% - exists in ExpectedBag and
+%% - does not exists in any NotExistingBags.
 %% Also returns a riak object which is found in ExpectedBags.
-assert_only_in_single_bag(ExpectedBags, NotExistingBags, RiakBucket, RiakKey) ->
-    case assert_in_expected_bags(ExpectedBags, RiakBucket, RiakKey, []) of
+assert_only_in_single_bag(ExpectedBag, NotExistingBags, RiakBucket, RiakKey) ->
+    case assert_in_expected_bag(ExpectedBag, RiakBucket, RiakKey) of
         {error, Reason} ->
             {error, Reason};
         Obj ->
@@ -151,17 +189,13 @@ assert_only_in_single_bag(ExpectedBags, NotExistingBags, RiakBucket, RiakKey) ->
             end
     end.
 
-assert_in_expected_bags([], _RiakBucket, _RiakKey, []) ->
-    not_found_in_expected_bags;
-assert_in_expected_bags([], _RiakBucket, _RiakKey, [Val]) ->
-    Val;
-assert_in_expected_bags([ExpectedBag | Rest], RiakBucket, RiakKey, Acc) ->
+assert_in_expected_bag(ExpectedBag, RiakBucket, RiakKey) ->
     case get_riakc_obj(ExpectedBag, RiakBucket, RiakKey) of
         {ok, Object} ->
             lager:info("~p/~p is found at ~s", [RiakBucket, RiakKey, ExpectedBag]),
-            assert_in_expected_bags(Rest, RiakBucket, RiakKey, [Object|Acc]);
+            Object;
         {error, notfound} ->
-            assert_in_expected_bags(Rest, RiakBucket, RiakKey, Acc)
+            {error, {not_found_in_expected_bag, ExpectedBag}}
     end.
 
 assert_not_in_other_bags([], _RiakBucket, _RiakKey) ->

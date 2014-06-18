@@ -7,6 +7,8 @@
 -export([confirm/0]).
 -include_lib("eunit/include/eunit.hrl").
 
+-include("riak_cs.hrl").
+
 -define(TEST_BUCKET_CREATE_DELETE, "riak-test-bucket-create-delete").
 
 -define(TEST_BUCKET,   "riak-test-bucket").
@@ -15,7 +17,7 @@
 
 confirm() ->
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} =
-        rtcs:setupNx1x1(1, rtcs_bag:configs(rtcs_bag:bags(disjoint))),
+        rtcs:setupNxMsingles(1, 4, rtcs_bag:configs(rtcs_bag:bags(disjoint))),
     rtcs_bag:set_weights(disjoint),
 
     lager:info("User is valid on the cluster, and has no buckets"),
@@ -44,9 +46,18 @@ assert_bucket_create_delete_twice(UserConfig) ->
 assert_object_in_expected_bag(RiakNodes, UserConfig, UploadType) ->
     {Bucket, Key, Content} = upload(UserConfig, UploadType),
     assert_whole_content(Bucket, Key, Content, UserConfig),
-    [_BagA, BagB, BagC] = RiakNodes,
-    rtcs_bag:assert_object_in_expected_bag(Bucket, Key, UploadType,
-                                           RiakNodes, [BagB], [BagC]),
+    [_BagA, _BagB, BagC, BagD, BagE] = RiakNodes,
+
+    %% riak-test-bucket goes to BagC, definitely
+    ManifestBag = BagC,
+    {_UUID, M} = rtcs_bag:assert_manifest_in_single_bag(
+                   Bucket, Key, RiakNodes, ManifestBag),
+
+    BlockBag = case rtcs_bag:high_low({Bucket, Key, M}) of
+                   low  -> BagD;
+                   high -> BagE
+               end,
+    ok = rtcs_bag:assert_block_in_single_bag(Bucket, M, RiakNodes, BlockBag),
     ok.
 
 upload(UserConfig, normal) ->
@@ -55,7 +66,8 @@ upload(UserConfig, normal) ->
     {?TEST_BUCKET, ?KEY_NORMAL, Content};
 upload(UserConfig, multipart) ->
     Content = rtcs_multipart:multipart_upload(?TEST_BUCKET, ?KEY_MULTIPART,
-                                              [mb(10), mb(5), mb(9) + 123, mb(6), 400],
+                                              %% [mb(10), mb(5), mb(9) + 123, mb(6), 400],
+                                              [mb(10), 400],
                                               UserConfig),
     {?TEST_BUCKET, ?KEY_MULTIPART, Content}.
 
