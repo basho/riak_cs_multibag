@@ -81,9 +81,9 @@ high_low(Seed) ->
 
 %% Calculate SHA integer from seed.
 %% This logic depnds on `riak_cs_multibag_server' implementation.
--spec sha_int(Seed::binary()) -> integer().
-sha_int({B, K, M}) when is_tuple(M) ->
-    sha_int({B, K, M?MANIFEST.uuid});
+-spec sha_int(Seed::term()) -> integer().
+sha_int({B, K, ?MANIFEST{uuid=UUID}}) ->
+    sha_int2({ensure_binary(B), ensure_binary(K), UUID});
 sha_int({B, K, UUID}) ->
     sha_int2({ensure_binary(B), ensure_binary(K), UUID});
 sha_int(Seed) ->
