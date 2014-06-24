@@ -3,7 +3,7 @@
 
 -module(riak_cs_multibag).
 
--export([process_specs/0, choose_bag_id/1]).
+-export([process_specs/0, choose_bag_id/2]).
 -export([bags/0]).
 -export([tab_name/0, tab_info/0]).
 -export([bag_id_from_bucket/1]).
@@ -39,9 +39,9 @@ process_specs() ->
     [BagServer, WeightUpdater].
 
 %% Choose bag ID for new bucket or new manifest
--spec choose_bag_id(manifet | block) -> bag_id().
-choose_bag_id(AllocType) ->
-    {ok, BagId} = riak_cs_multibag_server:choose_bag(AllocType),
+-spec choose_bag_id(manifet | block, term()) -> bag_id().
+choose_bag_id(AllocType, Seed) ->
+    {ok, BagId} = riak_cs_multibag_server:choose_bag(AllocType, Seed),
     BagId.
 
 -spec bags() -> [{bag_id(), Address::string(), Port::non_neg_integer()}].

@@ -12,7 +12,7 @@
 -behavior(gen_server).
 
 -export([start_link/0]).
--export([choose_bag/1, status/0, new_weights/1]).
+-export([choose_bag/2, status/0, new_weights/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
@@ -34,10 +34,10 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
--spec choose_bag(manifest | block) -> {ok, riak_cs_multibag:bag_id()} |
-                                      {error, term()}.
-choose_bag(Type) ->
-    gen_server:call(?SERVER, {choose_bag, Type}).
+-spec choose_bag(manifest | block, term()) -> {ok, riak_cs_multibag:bag_id()} |
+                                              {error, term()}.
+choose_bag(Type, Seed) ->
+    gen_server:call(?SERVER, {choose_bag, Type, term_to_binary(Seed)}).
 
 new_weights(Weights) ->
     gen_server:cast(?SERVER, {new_weights, Weights}).
@@ -50,17 +50,17 @@ init([]) ->
     riak_cs_multibag_weight_updater:maybe_refresh(),
     {ok, #state{}}.
 
-handle_call({choose_bag, Type}, _From, #state{initialized = true} = State)
+handle_call({choose_bag, Type, Seed}, _From, #state{initialized = true} = State)
   when Type =:= manifest orelse Type =:= block ->
     Choice = case Type of
-                 block    -> choose_bag_by_weight(State#state.block);
-                 manifest -> choose_bag_by_weight(State#state.manifest)
+                 block    -> choose_bag_by_weight(State#state.block, Seed);
+                 manifest -> choose_bag_by_weight(State#state.manifest, Seed)
              end,
     case Choice of
         {ok, BagId}     -> {reply, {ok, BagId}, State};
         {error, no_bag} -> {reply, {error, no_bag}, State}
     end;
-handle_call({choose_bag, _Type}, _From, #state{initialized = false} = State) ->
+handle_call({choose_bag, _Type, _Seed}, _From, #state{initialized = false} = State) ->
     {reply, {error, not_initialized}, State};
 handle_call(status, _From, #state{initialized=Initialized, 
                                   block=BlockWeights, manifest=ManifestWeights} = State) ->
@@ -93,12 +93,12 @@ code_change(_OldVsn, State, _Extra) ->
 %% bag3    0        30                   N/A
 %% bag4   30        60                   31..60
 %% TODO: Make this function deterministic
--spec choose_bag_by_weight([{riak_cs_multibag:pool_key(), riak_cs_multibag:weight_info()}]) ->
+-spec choose_bag_by_weight([{riak_cs_multibag:pool_key(), riak_cs_multibag:weight_info()}], binary()) ->
                                   {ok, riak_cs_multibag:bag_id()} |
                                   {error, no_bag}.
-choose_bag_by_weight([]) ->
+choose_bag_by_weight([], _Seed) ->
     {error, no_bag};
-choose_bag_by_weight(WeightInfoList) ->
+choose_bag_by_weight(WeightInfoList, Seed) ->
     %% TODO: SumOfWeights can be stored in state
     SumOfWeights = lists:sum([Weight || #weight_info{weight = Weight} <- WeightInfoList]),
     case SumOfWeights of
@@ -106,25 +106,27 @@ choose_bag_by_weight(WeightInfoList) ->
             %% Zero is special for transition from single bag, see README
             {ok, undefined};
         _ ->
-            Point = random:uniform(SumOfWeights),
-            choose_bag_by_weight(Point, WeightInfoList)
+            <<SHA:160>> = riak_cs_utils:sha(Seed),
+            Point = SHA rem SumOfWeights + 1,
+            choose_bag_by_weight1(Point, WeightInfoList)
     end.
 
 %% Always "1 =< Point" holds, bag_id with weight=0 never selected.
-choose_bag_by_weight(Point, [#weight_info{bag_id = BagId, weight = Weight} | _WeightInfoList])
+choose_bag_by_weight1(Point, [#weight_info{bag_id = BagId, weight = Weight} | _WeightInfoList])
   when Point =< Weight ->
     {ok, BagId};
-choose_bag_by_weight(Point, [#weight_info{weight = Weight} | WeightInfoList]) ->
-    choose_bag_by_weight(Point - Weight, WeightInfoList).
+choose_bag_by_weight1(Point, [#weight_info{weight = Weight} | WeightInfoList]) ->
+    choose_bag_by_weight1(Point - Weight, WeightInfoList).
 
 update_weight_state([], State) ->
     State#state{initialized = true};
 update_weight_state([{Type, WeightsForType} | Rest], State) ->
+    Sorted = lists:sort(WeightsForType),
     NewState = case Type of
                    block ->
-                       State#state{block = WeightsForType};
+                       State#state{block = Sorted};
                    manifest ->
-                       State#state{manifest = WeightsForType}
+                       State#state{manifest = Sorted}
                end,
     update_weight_state(Rest, NewState).
 
