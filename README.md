@@ -237,4 +237,13 @@ Finally, set weights of new bags by command. That's all.
 |          |          | set new bags |         | used          | used     |
 ```
 
+# Limitations
+
+## proxy-get is not supported
+
+Riak Enterprise Multi Data Center Replication has proxy-get feature [1].
+Multibag configuration of Riak CS does not supported it.
+
+[1] http://docs.basho.com/riakee/latest/cookbooks/Multi-Data-Center-Replication-v3-Operations/#Riak-CS-MDC-Gets
+
 Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved.
