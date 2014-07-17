@@ -6,3 +6,5 @@ deps
 erl_crash.dump
 ebin/
 .local_dialyzer_plt
+dialyzer_unhandled_warnings
+dialyzer_warnings
