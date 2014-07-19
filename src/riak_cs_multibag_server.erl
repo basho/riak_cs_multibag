@@ -34,8 +34,7 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
--spec choose_bag(manifest | block, term()) -> {ok, riak_cs_multibag:bag_id()} |
-                                              {error, term()}.
+-spec choose_bag(manifest | block, term()) -> {ok, bag_id()} | {error, term()}.
 choose_bag(Type, Seed) ->
     gen_server:call(?SERVER, {choose_bag, Type, term_to_binary(Seed)}).
 
@@ -93,9 +92,8 @@ code_change(_OldVsn, State, _Extra) ->
 %% bag3    0        30                   N/A
 %% bag4   30        60                   31..60
 %% TODO: Make this function deterministic
--spec choose_bag_by_weight([{riak_cs_multibag:pool_key(), riak_cs_multibag:weight_info()}], binary()) ->
-                                  {ok, riak_cs_multibag:bag_id()} |
-                                  {error, no_bag}.
+-spec choose_bag_by_weight([riak_cs_multibag:weight_info()], binary()) ->
+                                  {ok, bag_id()} | {error, no_bag}.
 choose_bag_by_weight([], _Seed) ->
     {error, no_bag};
 choose_bag_by_weight(WeightInfoList, Seed) ->
@@ -135,7 +133,7 @@ update_weight_state([{Type, WeightsForType} | Rest], State) ->
 %% ===================================================================
 -ifdef(TEST).
 
-choose_bag_by_weight_test() ->
+choose_bag_by_weight1_test() ->
     %% Better to convert to quickcheck?
     WeightInfoList = dummy_weights(),
     ListOfPointAndBagId = [
@@ -148,7 +146,7 @@ choose_bag_by_weight_test() ->
                            {101, <<"bag-C">>},
                            {110, <<"bag-C">>},
                            {120, <<"bag-C">>}],
-    [?assertEqual({ok, BagId}, choose_bag_by_weight(Point, WeightInfoList)) ||
+    [?assertEqual({ok, BagId}, choose_bag_by_weight1(Point, WeightInfoList)) ||
         {Point, BagId} <- ListOfPointAndBagId].
 
 dummy_weights() ->
