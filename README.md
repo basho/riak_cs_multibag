@@ -85,15 +85,17 @@ If you set weights and need immediate refresh, use a `refresh` command
 
 ```
  {riak_cs, [
-              %% [snip]
-              %% Riak node to which Riak CS accesses
+              %% ...snip...
+
+              %% Riak node in the master bag
               {riak_ip, "127.0.0.1"},
-              {riak_pb_port, 10017 } ,
-              %% [snip]
+              {riak_pb_port, 10017 },
+
+              %% ...snip...
            ]},
 
  {riak_cs_multibag, [
-              %% Connection pools for multiple bags
+              %% Connection pools for non-master bags
               {bags,
                [
                 {"bag-A", "127.0.0.1", 10017},
@@ -138,14 +140,23 @@ Add `bags` like above riak_cs configuration to Stanchion's `app.config`.
 
 ```
  {stanchion, [
-              ...
-              %% Connection pools for multiple bags
+              %% ...snip...
+
+              %% Riak node in the master bag
+              {riak_ip, "127.0.0.1"},
+              {riak_pb_port, 10017 } ,
+
+              %% ...snip...
+
+              %% Connection pools for non-master bags
               {bags,
                [
                 {"bag-A", "127.0.0.1", 10017},
                 {"bag-B", "127.0.0.1", 10027},
                 {"bag-C", "127.0.0.1", 10037}
                ]},
+
+              %% ...snip...
 ```
 
 ## Set, show, refresh weight information
