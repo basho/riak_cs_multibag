@@ -38,12 +38,11 @@ bags(disjoint) ->
 
 %% bag-A:NumNodes, bag-B:1node, bag-C:1node
 bags(NumNodes, disjoint) ->
-    PortOffset = NumNodes * 10 + 10017,
-    [{"bag-A", "127.0.0.1", 10017},
-     {"bag-B", "127.0.0.1", PortOffset},
-     {"bag-C", "127.0.0.1", PortOffset + 10},
-     {"bag-D", "127.0.0.1", PortOffset + 20},
-     {"bag-E", "127.0.0.1", PortOffset + 30}].
+    [{"bag-A", "127.0.0.1", rtcs:pb_port(1)},
+     {"bag-B", "127.0.0.1", rtcs:pb_port(NumNodes + 1)},
+     {"bag-C", "127.0.0.1", rtcs:pb_port(NumNodes + 2)},
+     {"bag-D", "127.0.0.1", rtcs:pb_port(NumNodes + 3)},
+     {"bag-E", "127.0.0.1", rtcs:pb_port(NumNodes + 4)}].
 
 weights(disjoint) ->
     [{manifest, "bag-B", 100},
@@ -55,6 +54,11 @@ set_weights(BagFlavor) when is_atom(BagFlavor) ->
     set_weights(weights(BagFlavor));
 set_weights(Weights) ->
     [bag_weight(1, Kind, BagId, Weight) || {Kind, BagId, Weight} <- Weights].
+
+%% Return Riak node IDs, one per cluster.  For disjoint, 1 for the
+%% master bag and last 4 non-master's (singleton clusters)
+riak_id_per_cluster(NumNodes, {multibag, disjoint}) ->
+    [1 | lists:seq(NumNodes + 1, NumNodes + 4)].
 
 %% CsBucket and CsKey may be needed if there are multiple bags for manifests (or blocks)
 pbc({multibag, disjoint}, Kind, RiakNodes, _Seed)
