@@ -44,15 +44,15 @@ handle_call({get_bucket, BucketName}, _From, State) ->
     case do_get_bucket(State#state{bucket_name=BucketName}) of
         {ok, #state{bucket_obj=BucketObj} = NewState} ->
             {reply, {ok, BucketObj}, NewState};
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
+        {error, Reason, NewState} ->
+            {reply, {error, Reason}, NewState}
     end;
 handle_call({set_bucket_name, BucketName}, _From, State) ->
     case do_get_bucket(State#state{bucket_name=BucketName}) of
         {ok, NewState} ->
             {reply, ok, NewState};
-        {error, Reason} ->
-            {reply, {error, Reason}, State}
+        {error, Reason, NewState} ->
+            {reply, {error, Reason}, NewState}
     end;
 handle_call({get_user, UserKey}, _From, State) ->
     case ensure_master_pbc(State) of
@@ -153,11 +153,11 @@ do_get_bucket(State) ->
             case riak_cs_riak_client:get_bucket_with_pbc(MasterPbc, BucketName) of
                 {ok, Obj} ->
                     {ok, NewState#state{bucket_obj=Obj}};
-                {error, _}=Error ->
-                    Error
+                {error, Reason} ->
+                    {error, Reason, NewState}
             end;
         {error, Reason} ->
-            {error, Reason}
+            {error, Reason, State}
     end.
 
 ensure_master_pbc(#state{master_pbc = MasterPbc} = State)
