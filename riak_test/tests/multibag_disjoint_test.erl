@@ -17,7 +17,8 @@
 
 confirm() ->
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} =
-        rtcs:setupNxMsingles(1, 4, rtcs_bag:configs(rtcs_bag:bags(disjoint))),
+        rtcs:setupNxMsingles(1, 4, rtcs_bag:configs(rtcs_bag:bags(disjoint)),
+                             current),
     rtcs_bag:set_weights(disjoint),
 
     lager:info("User is valid on the cluster, and has no buckets"),
