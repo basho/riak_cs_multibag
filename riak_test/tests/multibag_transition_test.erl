@@ -79,7 +79,7 @@ rand_content() ->
 transition_to_multibag_configuration(AdminConfig, NodeList, StanchionNode) ->
     Configs = rtcs_bag:configs(rtcs_bag:bags(disjoint)),
     #aws_config{access_key_id=K, secret_access_key=S} = AdminConfig,
-    rtcs:stop_cs_and_stanchion_nodes(NodeList),
+    rtcs:stop_cs_and_stanchion_nodes(NodeList, current),
     rtcs:stop_stanchion(),
     rt:pmap(fun({_CSNode, RiakNode}) ->
                     N = rt_cs_dev:node_id(RiakNode),
