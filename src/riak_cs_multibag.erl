@@ -66,7 +66,7 @@ maybe_init() ->
 init() ->
     _Tid = init_ets(),
     {ok, Bags} = application:get_env(riak_cs_multibag, bags),
-    {MasterAddress, MasterPort} = riak_cs_riakc_pool_worker:riak_host_port(),
+    {MasterAddress, MasterPort} = riak_cs_config:riak_host_port(),
     ok = store_pool_record({"master", MasterAddress, MasterPort}),
     ok = store_pool_records(Bags),
     ok.
