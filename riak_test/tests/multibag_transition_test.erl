@@ -23,6 +23,7 @@ confirm() ->
     %% setup single bag cluster at first
     {UserConfig, {RiakNodes, CSNodes, StanchionNode}} = rtcs:setupNxMsingles(1, 4),
     OldInOldContent = setup_old_bucket_and_key(UserConfig, ?OLD_BUCKET, ?OLD_KEY_IN_OLD),
+    rtcs:assert_error_log_empty(1),
 
     transition_to_multibag_configuration(
       UserConfig, lists:zip(CSNodes, RiakNodes), StanchionNode),
@@ -56,6 +57,7 @@ confirm() ->
     [assert_block_bag(B, K, M, RiakNodes, [BagD, BagE]) ||
         {B, K, M} <- [{?OLD_BUCKET, ?NEW_KEY_IN_OLD, MNewInOld},
                       {?NEW_BUCKET, ?NEW_KEY_IN_NEW, MNewInNew}]],
+    rtcs:assert_error_log_empty(1),
     pass.
 
 assert_block_bag(Bucket, Key, Manifest, RiakNodes, [BagD, BagE]) ->
@@ -81,6 +83,10 @@ transition_to_multibag_configuration(AdminConfig, NodeList, StanchionNode) ->
     #aws_config{access_key_id=K, secret_access_key=S} = AdminConfig,
     rtcs:stop_cs_and_stanchion_nodes(NodeList),
     rtcs:stop_stanchion(),
+    %% Because there are noises from poolboy shutdown at stopping riak-cs,
+    %% truncate error log here and re-assert emptiness of error.log file later.
+    rtcs:truncate_error_log(1),
+
     rt:pmap(fun({_CSNode, RiakNode}) ->
                     N = rt_cs_dev:node_id(RiakNode),
                     rtcs:update_cs_config(rt_config:get(?CS_CURRENT),
