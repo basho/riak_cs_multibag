@@ -124,6 +124,9 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 format_status(_Opt, [_PDict, Status]) ->
+    format_status(Status).
+
+format_status(Status) ->
     Fields = record_info(fields, state),
     [_Name | Values] = tuple_to_list(Status),
     lists:zip(Fields, Values).
@@ -172,8 +175,13 @@ ensure_master_pbc(#state{} = State) ->
 ensure_manifest_pbc(#state{manifest_pbc = ManifestPbc} = State)
   when is_pid(ManifestPbc) ->
     {ok, State};
-ensure_manifest_pbc(#state{manifest_bag = ?DEFAULT_BAG, master_pbc=MasterPbc} = State) ->
-    {ok, State#state{manifest_pbc=MasterPbc}};
+ensure_manifest_pbc(#state{manifest_bag = ?DEFAULT_BAG} = State) ->
+    case ensure_master_pbc(State) of
+        {ok, #state{master_pbc=MasterPbc} = NewState} ->
+            {ok, NewState#state{manifest_pbc=MasterPbc}};
+        {error, Reason} ->
+            {error, Reason}
+    end;
 ensure_manifest_pbc(#state{manifest_bag = BagId} = State)
   when is_binary(BagId) ->
     case riak_cs_utils:riak_connection(pool_name(BagId)) of
@@ -190,8 +198,13 @@ ensure_manifest_pbc(#state{bucket_obj = BucketObj} = State)
 ensure_block_pbc(#state{block_pbc = BlockPbc} = State)
   when is_pid(BlockPbc) ->
     {ok, State};
-ensure_block_pbc(#state{block_bag = ?DEFAULT_BAG, master_pbc=MasterPbc} = State) ->
-    {ok, State#state{block_pbc=MasterPbc}};
+ensure_block_pbc(#state{block_bag = ?DEFAULT_BAG} = State) ->
+    case ensure_master_pbc(State) of
+        {ok, #state{master_pbc=MasterPbc} = NewState} ->
+            {ok, NewState#state{block_pbc=MasterPbc}};
+        {error, Reason} ->
+            {error, Reason}
+    end;
 ensure_block_pbc(#state{block_bag = BagId} = State)
   when is_binary(BagId) ->
     case riak_cs_utils:riak_connection(pool_name(BagId)) of
