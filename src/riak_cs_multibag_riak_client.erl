@@ -205,5 +205,7 @@ ensure_block_pbc(#state{manifest=Manifest} = State)
     BlockBagId = riak_cs_mb_helper:bag_id_from_manifest(Manifest),
     ensure_block_pbc(State#state{block_bag=BlockBagId}).
 
+pool_name(?DEFAULT_BAG) ->
+    riak_cs_riak_client:pbc_pool_name(master);
 pool_name(BagId) ->
     riak_cs_riak_client:pbc_pool_name(BagId).
