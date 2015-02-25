@@ -57,6 +57,17 @@ confirm() ->
     [assert_block_bag(B, K, M, RiakNodes, [BagD, BagE]) ||
         {B, K, M} <- [{?OLD_BUCKET, ?NEW_KEY_IN_OLD, MNewInOld},
                       {?NEW_BUCKET, ?NEW_KEY_IN_NEW, MNewInNew}]],
+
+    assert_gc_run(hd(CSNodes), UserConfig),
+    [ok = rtcs_bag:assert_no_manifest_in_any_bag(B, K, RiakNodes) ||
+        {B, K} <- [{?OLD_BUCKET, ?OLD_KEY_IN_OLD},
+                   {?OLD_BUCKET, ?NEW_KEY_IN_OLD},
+                   {?NEW_BUCKET, ?NEW_KEY_IN_NEW}]],
+    %% [ok = rtcs_bag:assert_no_block_in_any_bag(B, M, RiakNodes) ||
+    [ok = rtcs_bag:assert_no_block_in_any_bag(B, M, RiakNodes) ||
+        {B, M} <- [{?OLD_BUCKET, MOldInOld},
+                   {?OLD_BUCKET, MNewInOld},
+                   {?NEW_BUCKET, MNewInNew}]],
     rtcs:assert_error_log_empty(1),
     pass.
 
@@ -116,3 +127,28 @@ assert_whole_content(ExpectedContent, ResultObj) ->
     ?assertEqual(byte_size(ExpectedContent), list_to_integer(ContentLength)),
     ?assertEqual(byte_size(ExpectedContent), byte_size(Content)),
     ?assertEqual(ExpectedContent, Content).
+
+assert_gc_run(CSNode, UserConfig) ->
+    rtcs:gc(1, "set-interval infinity"),
+    rtcs:gc(1, "set-leeway 1"),
+    rtcs:gc(1, "cancel"),
+
+    erlcloud_s3:delete_object(?OLD_BUCKET, ?OLD_KEY_IN_OLD, UserConfig),
+    timer:sleep(2000),
+    erlcloud_s3:delete_object(?OLD_BUCKET, ?NEW_KEY_IN_OLD, UserConfig),
+    erlcloud_s3:delete_object(?NEW_BUCKET, ?NEW_KEY_IN_NEW, UserConfig),
+    %% [erlcloud_s3:delete_object(B, K, UserConfig) ||
+    %%     {B, K} <- [{?OLD_BUCKET, ?OLD_KEY_IN_OLD},
+    %%                {?OLD_BUCKET, ?NEW_KEY_IN_OLD},
+    %%                {?NEW_BUCKET, ?NEW_KEY_IN_NEW}]],
+
+    %% Ensure the leeway has expired
+    timer:sleep(2000),
+
+    rt:setup_log_capture(CSNode),
+    rtcs:gc(1, "batch 1"),
+    true = rt:expect_in_log(CSNode,
+                            "Finished garbage collection: \\d+ seconds, "
+                            "\\d+ batch_count, \\d+ batch_skips, "
+                            "\\d+ manif_count, \\d+ block_count"),
+    ok.
