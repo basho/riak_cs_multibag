@@ -29,7 +29,7 @@
 
           bucket_name  = uninitialized :: uninitialized | binary(),
           bucket_obj   = uninitialized :: uninitialized | term(), % riakc_obj:riakc_obj()
-          manifest     = uninitialized :: uninitialized | term()  % lfs_manifest()
+          manifest     = uninitialized :: uninitialized | {binary(), term()}  % UUID and lfs_manifest()
          }).
 
 init([]) ->
@@ -40,20 +40,37 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 handle_call(cleanup, _From, State) ->
     {reply, ok, do_cleanup(State)};
-handle_call({get_bucket, BucketName}, _From, State) ->
+
+handle_call({get_bucket, BucketName}, _From,
+            #state{bucket_name=uninitialized} = State) ->
     case do_get_bucket(State#state{bucket_name=BucketName}) of
         {ok, #state{bucket_obj=BucketObj} = NewState} ->
             {reply, {ok, BucketObj}, NewState};
         {error, Reason, NewState} ->
             {reply, {error, Reason}, NewState}
     end;
-handle_call({set_bucket_name, BucketName}, _From, State) ->
+handle_call({get_bucket, BucketName}, _From,
+            #state{bucket_name=BucketName, bucket_obj=BucketObj} = State) ->
+    {reply, {ok, BucketObj}, State};
+handle_call({get_bucket, RequestedBucketName}, _From,
+            #state{bucket_name=BucketName} = State) ->
+    {reply, {error, {bucket_name_already_set, RequestedBucketName, BucketName}}, State};
+
+handle_call({set_bucket_name, BucketName}, _From,
+            #state{bucket_name = uninitialized} = State) ->
     case do_get_bucket(State#state{bucket_name=BucketName}) of
         {ok, NewState} ->
             {reply, ok, NewState};
         {error, Reason, NewState} ->
             {reply, {error, Reason}, NewState}
     end;
+handle_call({set_bucket_name, BucketName}, _From,
+            #state{bucket_name = BucketName} = State) ->
+    {reply, ok, State};
+handle_call({set_bucket_name, RequestedBucketName}, _From,
+            #state{bucket_name = BucketName} = State) ->
+    {reply, {error, {bucket_name_already_set, RequestedBucketName, BucketName}}, State};
+
 handle_call({get_user, UserKey}, _From, State) ->
     case ensure_master_pbc(State) of
         {ok, #state{master_pbc=MasterPbc} = NewState} ->
@@ -84,7 +101,9 @@ handle_call(manifest_pbc, _From, State) ->
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-handle_call({set_manifest_bag, ManifestBagId}, _From, State)
+
+handle_call({set_manifest_bag, ManifestBagId}, _From,
+            #state{manifest_bag=uninitialized} = State)
   when ManifestBagId =:= ?DEFAULT_BAG orelse is_binary(ManifestBagId) ->
     case ensure_manifest_pbc(State#state{manifest_bag=ManifestBagId}) of
         {ok, NewState} ->
@@ -92,13 +111,28 @@ handle_call({set_manifest_bag, ManifestBagId}, _From, State)
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-handle_call({set_manifest, Manifest}, _From, State) ->
-    case ensure_block_pbc(State#state{manifest=Manifest}) of
+handle_call({set_manifest_bag, ManifestBagId}, _From,
+            #state{manifest_bag=ManifestBagId} = State) ->
+    {reply, ok, State};
+handle_call({set_manifest_bag, RequestedBagId}, _From,
+            #state{manifest_bag=ManifestBagId} = State) ->
+    {reply, {error, {manifest_bag_already_set, RequestedBagId, ManifestBagId}}, State};
+
+handle_call({set_manifest, {UUID, Manifest}}, _From,
+            #state{manifest=uninitialized} = State) ->
+    case ensure_block_pbc(State#state{manifest={UUID, Manifest}}) of
         {ok, NewState} ->
             {reply, ok, NewState};
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
+handle_call({set_manifest, {UUID, _ReqestedManifest}}, _From,
+            #state{manifest={UUID, _Manifest}} = State) ->
+    {reply, ok, State};
+handle_call({set_manifest, RequestedManifest}, _From,
+            #state{manifest=Manifest} = State) ->
+    {reply, {error, {manifest_already_set, RequestedManifest, Manifest}}, State};
+
 handle_call(block_pbc, _From, State) ->
     case ensure_block_pbc(State) of
         {ok, #state{block_pbc=BlockPbc} = NewState} ->
@@ -124,6 +158,9 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 format_status(_Opt, [_PDict, Status]) ->
+    format_status(Status).
+
+format_status(Status) ->
     Fields = record_info(fields, state),
     [_Name | Values] = tuple_to_list(Status),
     lists:zip(Fields, Values).
@@ -172,8 +209,13 @@ ensure_master_pbc(#state{} = State) ->
 ensure_manifest_pbc(#state{manifest_pbc = ManifestPbc} = State)
   when is_pid(ManifestPbc) ->
     {ok, State};
-ensure_manifest_pbc(#state{manifest_bag = ?DEFAULT_BAG, master_pbc=MasterPbc} = State) ->
-    {ok, State#state{manifest_pbc=MasterPbc}};
+ensure_manifest_pbc(#state{manifest_bag = ?DEFAULT_BAG} = State) ->
+    case ensure_master_pbc(State) of
+        {ok, #state{master_pbc=MasterPbc} = NewState} ->
+            {ok, NewState#state{manifest_pbc=MasterPbc}};
+        {error, Reason} ->
+            {error, Reason}
+    end;
 ensure_manifest_pbc(#state{manifest_bag = BagId} = State)
   when is_binary(BagId) ->
     case riak_cs_utils:riak_connection(pool_name(BagId)) of
@@ -190,8 +232,13 @@ ensure_manifest_pbc(#state{bucket_obj = BucketObj} = State)
 ensure_block_pbc(#state{block_pbc = BlockPbc} = State)
   when is_pid(BlockPbc) ->
     {ok, State};
-ensure_block_pbc(#state{block_bag = ?DEFAULT_BAG, master_pbc=MasterPbc} = State) ->
-    {ok, State#state{block_pbc=MasterPbc}};
+ensure_block_pbc(#state{block_bag = ?DEFAULT_BAG} = State) ->
+    case ensure_master_pbc(State) of
+        {ok, #state{master_pbc=MasterPbc} = NewState} ->
+            {ok, NewState#state{block_pbc=MasterPbc}};
+        {error, Reason} ->
+            {error, Reason}
+    end;
 ensure_block_pbc(#state{block_bag = BagId} = State)
   when is_binary(BagId) ->
     case riak_cs_utils:riak_connection(pool_name(BagId)) of
@@ -200,10 +247,11 @@ ensure_block_pbc(#state{block_bag = BagId} = State)
         {error, Reason} ->
             {error, Reason}
     end;
-ensure_block_pbc(#state{manifest=Manifest} = State)
-  when Manifest =/= uninitialized ->
+ensure_block_pbc(#state{manifest={_UUID, Manifest}} = State) ->
     BlockBagId = riak_cs_mb_helper:bag_id_from_manifest(Manifest),
     ensure_block_pbc(State#state{block_bag=BlockBagId}).
 
+pool_name(?DEFAULT_BAG) ->
+    riak_cs_riak_client:pbc_pool_name(master);
 pool_name(BagId) ->
     riak_cs_riak_client:pbc_pool_name(BagId).
