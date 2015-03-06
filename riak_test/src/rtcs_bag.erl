@@ -136,6 +136,9 @@ bag_refresh(N) ->
 
 %% Assertion utilities
 
+%% Assert manifest riak object of given bkey exists only in
+%% `ExpectedBag' and does not exist in other bags.  `ExpectedBag'
+%% should be calculated by multibag configuration and weights.
 assert_manifest_in_single_bag(Bucket, Key, AllBags, ExpectedBag) ->
     NotExistingBags = AllBags -- [ExpectedBag],
     RiakBucket = <<"0o:", (rtcs:md5(Bucket))/binary>>,
@@ -149,6 +152,9 @@ assert_manifest_in_single_bag(Bucket, Key, AllBags, ExpectedBag) ->
             {UUID, M}
     end.
 
+%% Assert block riak object of given manifest with seq=0 exists only
+%% in `ExpectedBag' and does not exist in other bags.  `ExpectedBag'
+%% should be calculated by multibag configuration and weights.
 assert_block_in_single_bag(Bucket, Manifest, AllBags, ExpectedBag) ->
     NotExistingBags = AllBags -- [ExpectedBag],
     RiakBucket = <<"0b:", (rtcs:md5(Bucket))/binary>>,
@@ -162,6 +168,33 @@ assert_block_in_single_bag(Bucket, Manifest, AllBags, ExpectedBag) ->
             {error, {Bucket, Key, UUIDForBlock}, Reason};
         _Object ->
             ok
+    end.
+
+%% Assert manifest riak object of given bkey does not exist in any
+%% bag.
+assert_no_manifest_in_any_bag(Bucket, Key, AllBags) ->
+    RiakBucket = <<"0o:", (rtcs:md5(Bucket))/binary>>,
+    case assert_not_in_other_bags(AllBags, RiakBucket, Key) of
+        ok -> ok;
+        {error, Reason} ->
+            lager:error("assert_no_manifest_in_any_bag for ~w/~w error: ~p",
+                        [Bucket, Key, Reason]),
+            {error, {Bucket, Key, Reason}}
+    end.
+
+%% Assert block riak object of given manifest with seq=0 does not
+%% exist in any bag.
+assert_no_block_in_any_bag(Bucket, Manifest, AllBags) ->
+    RiakBucket = <<"0b:", (rtcs:md5(Bucket))/binary>>,
+    UUIDForBlock = block_uuid(Manifest),
+    RiakKey = <<UUIDForBlock/binary, 0:32>>,
+    case assert_not_in_other_bags(AllBags, RiakBucket, RiakKey) of
+        ok -> ok;
+        {error, Reason} ->
+            {_, Key} = Manifest?MANIFEST.bkey,
+            lager:error("assert_no_block_in_any_bag for ~w/~w [~w] error: ~p",
+                        [Bucket, Key, UUIDForBlock, Reason]),
+            {error, {Bucket, Key, UUIDForBlock}, Reason}
     end.
 
 block_uuid(M) ->
