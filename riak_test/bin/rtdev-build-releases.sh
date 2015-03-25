@@ -4,7 +4,7 @@
 set -e
 
 # You need to use this script once to build a set of devrels for prior
-# releases of Riak (for mixed version / upgrade testing). You should
+# releases of Riak CS (for mixed version / upgrade testing). You should
 # create a directory and then run this script from within that directory.
 # I have ~/test-releases that I created once, and then re-use for testing.
 #
@@ -14,10 +14,17 @@ set -e
 # Different versions of Riak were released using different Erlang versions,
 # make sure to build with the appropriate version.
 
-# This is based on my usage of having multiple Erlang versions in different
-# directories. If using kerl or whatever, modify to use kerl's activate logic.
-# Or, alternatively, just substitute the paths to the kerl install paths as
-# that should work too.
+# This script builds released package(s) and one additional devrel's
+# from git, patched variant of 1.5.4. This is because some riak_test
+# cases require riak_cs_multibag's bug fixes after 1.5.4 but 1.5.5 is
+# not yet released.  This script builds devrel's based on the branches
+# 'release/1.5' of riak_cs and riak_cs_multibag at 2015-03-25.
+#
+# cf: Corresponding PRs
+# - Refactor/multibag simpler state transition
+#   https://github.com/basho/riak_cs_multibag/pull/21
+# - Refactor/multibag simpler state transition
+#    https://github.com/basho/riak_cs/pull/1080
 
 R15B01=${R15B01:-$HOME/erlang/R15B01-64}
 R16B02=${R16B02:-$HOME/erlang/R16B02-64}
@@ -119,3 +126,14 @@ download http://private.downloads.basho.com/riak-cs-ee/164aef/1.5/1.5.4/riak-cs-
 
 tar -xf riak-cs-1.5.4.tar.gz
 build "riak-cs-1.5.4" $R15B01
+
+## Special build for unreleased version from git, 1.5.4 patch 1
+rm -rf riak-cs-1.5.4p1
+git clone git@github.com:basho/riak_cs.git riak-cs-1.5.4p1
+cd riak-cs-1.5.4p1
+git checkout 751485d7eeae450233219575e831b890c93acd5e
+make deps
+(cd deps/riak_cs_multibag; git checkout 9d5647550980ebe2e0d03ced423e803fc7f9743c)
+cd ..
+
+build "riak-cs-1.5.4p1" $R15B01
