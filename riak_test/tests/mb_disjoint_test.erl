@@ -1,6 +1,6 @@
 %% Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved.
 
--module(multibag_disjoint_test).
+-module(mb_disjoint_test).
 
 %% @doc `riak_test' module for testing multi bag disjoint configuration
 

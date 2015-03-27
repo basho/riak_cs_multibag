@@ -1,6 +1,6 @@
 %% Copyright (c) 2015 Basho Technologies, Inc.  All Rights Reserved.
 
--module(multibag_transition_test2).
+-module(mb_trans2_test).
 
 %% @doc `riak_test' module for testing transition from single bag configuration
 %% to multiple bag one, another pattern with `cs_suites'.
