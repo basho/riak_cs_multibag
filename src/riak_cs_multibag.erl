@@ -4,7 +4,7 @@
 -module(riak_cs_multibag).
 
 -export([process_specs/0, choose_bag_id/2]).
--export([bags/0]).
+-export([bags/0, cluster_id/2]).
 -export([tab_name/0, tab_info/0]).
 -export([bag_id_from_bucket/1]).
 
@@ -15,7 +15,8 @@
 -record(bag, {bag_id :: bag_id(),
               pool_name :: atom(),
               address :: string(),
-              port :: non_neg_integer()}).
+              port :: non_neg_integer(),
+              cluster_id :: binary()}).
 
 -include("riak_cs_multibag.hrl").
 -include_lib("riak_pb/include/riak_pb_kv_codec.hrl").
@@ -51,6 +52,19 @@ bags() ->
         #bag{bag_id=BagId, pool_name=_Name, address=Address, port=Port} <-
             ets:tab2list(?ETS_TAB)].
 
+-spec cluster_id(fun(), bag_id()) -> undefined | binary().
+cluster_id(_GetClusterIdFun, undefined) ->
+    undefined;
+cluster_id(GetClusterIdFun, BagId) ->
+    case ets:lookup(?ETS_TAB, BagId) of
+        [#bag{cluster_id=ClusterId}] when is_binary(ClusterId) ->
+            ClusterId;
+        [Bag] ->
+            ClusterId = GetClusterIdFun(BagId),
+            true = ets:insert(?ETS_TAB, Bag#bag{cluster_id=ClusterId}),
+            ClusterId
+    end.
+
 %% Extract bag ID from `riakc_obj' in moss.buckets
 -spec bag_id_from_bucket(riakc_obj:riakc_obj()) -> bag_id().
 bag_id_from_bucket(BucketObj) ->
@@ -73,7 +87,7 @@ init() ->
 
 init_ets() ->
     ets:new(?ETS_TAB, [{keypos, #bag.bag_id},
-                       named_table, protected, {read_concurrency, true}]).
+                       named_table, public, {read_concurrency, true}]).
 
 store_pool_records([]) ->
     ok;
