@@ -106,13 +106,13 @@ setup_clusters() ->
               end,
     BagsConf = fun(N) when N =< 4 -> rtcs_bag:bags(2, 1, shared);
                   (_)             -> rtcs_bag:bags(2, 5, shared) end,
-    ConfigFun = fun(cs, Config, N) ->
-                        Config ++ [{riak_cs_multibag, [{bags, BagsConf(N)}]}];
-                   (stanchion, Config, _) ->
-                        rtcs:replace_stanchion_config(bags, BagsConf(1), Config)
-                end,
+    ConfigUpdateFun = fun(cs, Config, N) ->
+                              Config ++ [{riak_cs_multibag, [{bags, BagsConf(N)}]}];
+                         (stanchion, Config, _) ->
+                              rtcs:replace_stanchion_config(bags, BagsConf(1), Config)
+                      end,
     {_AdminConfig, {RiakNodes, _CSs, _Stanchion}} =
-        rtcs:setup_clusters(rtcs:configs([]), ConfigFun, JoinFun, 8, current),
+        rtcs:setup_clusters(rtcs:configs([]), ConfigUpdateFun, JoinFun, 8, current),
 
     [WestA1, WestA2, WestB, WestC, EastA1, EastA2, EastB, EastC] = RiakNodes,
     %% Name and connect v3 repl
