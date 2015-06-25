@@ -48,7 +48,7 @@ assert_bucket_create_delete_twice(UserConfig) ->
 
 assert_object_in_expected_bag(RiakNodes, UserConfig, UploadType, B, K) ->
     {Bucket, Key, Content} = rtcs_object:upload(UserConfig, UploadType, B, K),
-    rtcs_object:assert_whole_content(Bucket, Key, Content, UserConfig),
+    rtcs_object:assert_whole_content(UserConfig, Bucket, Key, Content),
     [_BagA, _BagB, BagC, BagD, BagE] = RiakNodes,
 
     %% riak-test-bucket goes to BagC, definitely
