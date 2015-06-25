@@ -53,8 +53,8 @@ bags() ->
             ets:tab2list(?ETS_TAB)].
 
 -spec cluster_id(fun(), bag_id()) -> undefined | binary().
-cluster_id(_GetClusterIdFun, undefined) ->
-    undefined;
+cluster_id(GetClusterIdFun, undefined) ->
+    cluster_id(GetClusterIdFun, <<"master">>);
 cluster_id(GetClusterIdFun, BagId) ->
     case ets:lookup(?ETS_TAB, BagId) of
         [#bag{cluster_id=ClusterId}] when is_binary(ClusterId) ->
