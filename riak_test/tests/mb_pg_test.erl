@@ -31,26 +31,37 @@ confirm() ->
     {AccessKeyId1, SecretAccessKey1} = rtcs:create_user(hd(WestANodes), 1),
     UserWest = rtcs:config(AccessKeyId1, SecretAccessKey1, rtcs:cs_port(hd(WestANodes))),
     UserEast = rtcs:config(AccessKeyId1, SecretAccessKey1, rtcs:cs_port(hd(EastANodes))),
+
+    lager:info("Initialize weights by zero, without multibag"),
+    set_zero_weight(),
     [?assertEqual(ok, erlcloud_s3:create_bucket(
                         ?BUCKET_PREFIX ++ integer_to_list(K),
                         UserWest)) ||
         K <- lists:seq(1, ?BUCKET_COUNT)],
-    assert_proxy_get_works(UserWest, UserEast),
+    Objects0 = upload_objects(UserWest, UserEast),
+
+    lager:info("Update weights with non-zero values, transition to multibag"),
+    set_weights(),
+    lager:info("Try to download uploaded object BEFORE multibag configuration..."),
+    assert_proxy_get(UserWest, UserEast, Objects0),
+
+    Objects1 = upload_objects(UserWest, UserEast),
+    assert_proxy_get(UserWest, UserEast, Objects1),
 
     lager:info("Disable proxy_get and confirm it does not work actually."),
     [rtcs:disable_proxy_get(rt_cs_dev:node_id(WLeader), current, EName) ||
         {{WLeader, _WNodes, _WName}, {_ELeader, _ENodes, EName}} <- Pairs],
-
     assert_proxy_get_does_not_work(UserWest, UserEast),
 
     lager:info("Enable proxy_get again."),
     [rtcs:enable_proxy_get(rt_cs_dev:node_id(WLeader), current, EName) ||
         {{WLeader, _WNodes, _WName}, {_ELeader, _ENodes, EName}} <- Pairs],
-    assert_proxy_get_works(UserWest, UserEast),
+    Objects2 = upload_objects(UserWest, UserEast),
+    assert_proxy_get(UserWest, UserEast, Objects2),
 
     pass.
 
-assert_proxy_get_works(UserWest, UserEast) ->
+upload_objects(UserWest, _UserEast) ->
     lager:info("Upload objects at West"),
     Normals = [upload(UserWest, normal, ?BUCKET_PREFIX ++ integer_to_list(K),
                       ?KEY_NORMAL) ||
@@ -68,6 +79,9 @@ assert_proxy_get_works(UserWest, UserEast) ->
                     upload(UserWest, multipart_copy, B, DstKey, K),
                     {B, DstKey, Content}
                 end || {B, K, Content} <- MPs],
+    {Normals, MPs, NormalCopies, MPCopies}.
+
+assert_proxy_get(_UserWest, UserEast, {Normals, MPs, NormalCopies, MPCopies}) ->
     lager:info("Try to download them from East..."),
     [assert_whole_content(UserEast, B, K, Content) ||
         {B, K, Content} <- Normals],
@@ -153,10 +167,17 @@ setup_clusters() ->
      end || {{WLeader, WNodes, _WName}, {_ELeader, ENodes, EName}} <- Pairs],
 
     lager:info("Replication setup finished."),
+    Pairs.
 
+set_zero_weight() ->
+    rtcs_bag:set_zero_weight(),
+    [rtcs_bag:bag_refresh(N) || N <- lists:seq(1, 8)],
+    ok.
+
+set_weights() ->
     rtcs_bag:set_weights(shared),
     [rtcs_bag:bag_refresh(N) || N <- lists:seq(1, 8)],
-    Pairs.
+    ok.
 
 upload(UserConfig, normal, B, K) ->
     Content = crypto:rand_bytes(mb(4)),

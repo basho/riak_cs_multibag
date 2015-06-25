@@ -58,6 +58,9 @@ weights(shared) ->
      {all, "bag-B", 100},
      {all, "bag-C", 100}].
 
+set_zero_weight() ->
+    set_weights([{all, "bag-A", 0}]).
+
 set_weights(BagFlavor) when is_atom(BagFlavor) ->
     set_weights(weights(BagFlavor));
 set_weights(Weights) ->
