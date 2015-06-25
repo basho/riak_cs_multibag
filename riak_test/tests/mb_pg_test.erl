@@ -42,11 +42,11 @@ confirm() ->
 
     lager:info("Update weights with non-zero values, transition to multibag"),
     set_weights(),
-    lager:info("Try to download uploaded object BEFORE multibag configuration..."),
+    lager:info("Assert proxy get for object uploaded BEFORE multibag transition..."),
     assert_proxy_get(UserWest, UserEast, Objects0),
 
-    Objects1 = upload_objects(UserWest, UserEast),
-    assert_proxy_get(UserWest, UserEast, Objects1),
+    lager:info("Test proxy get for objects uploaded AFTER multibag transition..."),
+    upload_and_assert_proxy_get(UserWest, UserEast),
 
     lager:info("Disable proxy_get and confirm it does not work actually."),
     [rtcs:disable_proxy_get(rt_cs_dev:node_id(WLeader), current, EName) ||
@@ -56,51 +56,54 @@ confirm() ->
     lager:info("Enable proxy_get again."),
     [rtcs:enable_proxy_get(rt_cs_dev:node_id(WLeader), current, EName) ||
         {{WLeader, _WNodes, _WName}, {_ELeader, _ENodes, EName}} <- Pairs],
-    Objects2 = upload_objects(UserWest, UserEast),
-    assert_proxy_get(UserWest, UserEast, Objects2),
+    upload_and_assert_proxy_get(UserWest, UserEast),
 
     pass.
 
+upload_and_assert_proxy_get(UserWest, UserEast) ->
+    Objects = upload_objects(UserWest, UserEast),
+    assert_proxy_get(UserWest, UserEast, Objects).
+
 upload_objects(UserWest, _UserEast) ->
     lager:info("Upload objects at West"),
-    Normals = [upload(UserWest, normal, ?BUCKET_PREFIX ++ integer_to_list(K),
-                      ?KEY_NORMAL) ||
+    Normals = [rtcs_object:upload(UserWest, normal,
+                                  ?BUCKET_PREFIX ++ integer_to_list(K), ?KEY_NORMAL) ||
                   K <- lists:seq(1, ?BUCKET_COUNT)],
-    MPs =  [upload(UserWest, multipart, ?BUCKET_PREFIX ++ integer_to_list(K),
-                      ?KEY_MP) ||
+    MPs =  [rtcs_object:upload(UserWest, multipart,
+                               ?BUCKET_PREFIX ++ integer_to_list(K), ?KEY_MP) ||
                   K <- lists:seq(1, ?BUCKET_COUNT)],
     NormalCopies = [begin
                         DstKey = K ++ "-copy",
-                        upload(UserWest, normal_copy, B, DstKey, K),
+                        rtcs_object:upload(UserWest, normal_copy, B, DstKey, K),
                         {B, DstKey, Content}
                     end || {B, K, Content} <- Normals],
     MPCopies = [begin
                     DstKey = K ++ "-copy",
-                    upload(UserWest, multipart_copy, B, DstKey, K),
+                    rtcs_object:upload(UserWest, multipart_copy, B, DstKey, K),
                     {B, DstKey, Content}
                 end || {B, K, Content} <- MPs],
     {Normals, MPs, NormalCopies, MPCopies}.
 
 assert_proxy_get(_UserWest, UserEast, {Normals, MPs, NormalCopies, MPCopies}) ->
     lager:info("Try to download them from East..."),
-    [assert_whole_content(UserEast, B, K, Content) ||
+    [rtcs_object:assert_whole_content(UserEast, B, K, Content) ||
         {B, K, Content} <- Normals],
-    [assert_whole_content(UserEast, B, K, Content) ||
+    [rtcs_object:assert_whole_content(UserEast, B, K, Content) ||
         {B, K, Content} <- MPs],
-    [assert_whole_content(UserEast, B, K, Content) ||
+    [rtcs_object:assert_whole_content(UserEast, B, K, Content) ||
         {B, K, Content} <- NormalCopies],
-    [assert_whole_content(UserEast, B, K, Content) ||
+    [rtcs_object:assert_whole_content(UserEast, B, K, Content) ||
         {B, K, Content} <- MPCopies],
     lager:info("Got every object via proxy_get. Perfect."),
     ok.
 
 assert_proxy_get_does_not_work(UserWest, UserEast) ->
     lager:info("Upload objects at West"),
-    Normals = [upload(UserWest, normal, ?BUCKET_PREFIX ++ integer_to_list(K),
-                      ?KEY_NORMAL) ||
+    Normals = [rtcs_object:upload(UserWest, normal,
+                                  ?BUCKET_PREFIX ++ integer_to_list(K), ?KEY_NORMAL) ||
                   K <- lists:seq(1, ?BUCKET_COUNT)],
-    MPs =  [upload(UserWest, multipart, ?BUCKET_PREFIX ++ integer_to_list(K),
-                      ?KEY_MP) ||
+    MPs =  [rtcs_object:upload(UserWest, multipart,
+                               ?BUCKET_PREFIX ++ integer_to_list(K), ?KEY_MP) ||
                   K <- lists:seq(1, ?BUCKET_COUNT)],
     lager:info("Try to download them from East, all should fail..."),
     [?assertError({aws_error,{socket_error,retry_later}},
@@ -178,43 +181,3 @@ set_weights() ->
     rtcs_bag:set_weights(shared),
     [rtcs_bag:bag_refresh(N) || N <- lists:seq(1, 8)],
     ok.
-
-upload(UserConfig, normal, B, K) ->
-    Content = crypto:rand_bytes(mb(4)),
-    erlcloud_s3:put_object(B, K, Content, UserConfig),
-    {B, K, Content};
-upload(UserConfig, multipart, B, K) ->
-    Content = rtcs_multipart:multipart_upload(B, K, [mb(10), 400], UserConfig),
-    {B, K, Content}.
-
-upload(UserConfig, normal_copy, B, DstK, SrcK) ->
-    ?assertEqual([{copy_source_version_id, "false"}, {version_id, "null"}],
-                 erlcloud_s3:copy_object(B, DstK, B, SrcK, UserConfig));
-upload(UserConfig, multipart_copy, B, DstK, SrcK) ->
-    InitUploadRes = erlcloud_s3_multipart:initiate_upload(B, DstK, "text/plain", [], UserConfig),
-    UploadId = erlcloud_s3_multipart:upload_id(InitUploadRes),
-
-    {RespHeaders1, _} = rtcs_multipart:upload_part_copy(
-                          B, DstK, UploadId, 1, B, SrcK, {0, mb(5)-1}, UserConfig),
-    Etag1 = rtcs_multipart:assert_part(B, DstK, UploadId, 1, UserConfig, RespHeaders1),
-    {RespHeaders2, _} = rtcs_multipart:upload_part_copy(
-                          B, DstK, UploadId, 2, B, SrcK, {mb(5), mb(10)+400-1}, UserConfig),
-    Etag2 = rtcs_multipart:assert_part(B, DstK, UploadId, 2, UserConfig, RespHeaders2),
-
-    EtagList = [ {1, Etag1}, {2, Etag2} ],
-    ?assertEqual(ok, erlcloud_s3_multipart:complete_upload(
-                       B, DstK, UploadId, EtagList, UserConfig)).
-
-mb(MegaBytes) ->
-    MegaBytes * 1024 * 1024.
-
-assert_whole_content(UserConfig, Bucket, Key, ExpectedContent) ->
-    Obj = erlcloud_s3:get_object(Bucket, Key, UserConfig),
-    assert_whole_content(ExpectedContent, Obj).
-
-assert_whole_content(ExpectedContent, ResultObj) ->
-    Content = proplists:get_value(content, ResultObj),
-    ContentLength = proplists:get_value(content_length, ResultObj),
-    ?assertEqual(byte_size(ExpectedContent), list_to_integer(ContentLength)),
-    ?assertEqual(byte_size(ExpectedContent), byte_size(Content)),
-    ?assertEqual(ExpectedContent, Content).

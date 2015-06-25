@@ -137,10 +137,6 @@ assert_gc_run(CSNode, UserConfig) ->
     timer:sleep(2000),
     erlcloud_s3:delete_object(?OLD_BUCKET, ?NEW_KEY_IN_OLD, UserConfig),
     erlcloud_s3:delete_object(?NEW_BUCKET, ?NEW_KEY_IN_NEW, UserConfig),
-    %% [erlcloud_s3:delete_object(B, K, UserConfig) ||
-    %%     {B, K} <- [{?OLD_BUCKET, ?OLD_KEY_IN_OLD},
-    %%                {?OLD_BUCKET, ?NEW_KEY_IN_OLD},
-    %%                {?NEW_BUCKET, ?NEW_KEY_IN_NEW}]],
 
     %% Ensure the leeway has expired
     timer:sleep(2000),
