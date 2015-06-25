@@ -4,7 +4,7 @@ Unknown functions:
   riak_cs_riak_client:get_user_with_pbc/2
   riak_cs_riak_client:pbc_pool_name/1
   riak_cs_riak_client:save_user_with_pbc/3
-  riak_cs_riakc_pool_worker:riak_host_port/0
+  riak_cs_config:riak_host_port/0
   riak_cs_utils:close_riak_connection/2
   riak_cs_utils:riak_connection/1
   riak_cs_utils:sha/1

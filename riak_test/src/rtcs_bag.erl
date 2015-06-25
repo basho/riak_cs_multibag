@@ -36,7 +36,6 @@ flavored_setup(NumNodes, {multibag, BagFlavor}, CustomConfigs, Vsn) ->
 bags(disjoint) ->
     bags(1, disjoint).
 
-%% bag-A:NumNodes, bag-B:1node, bag-C:1node
 bags(NumNodes, disjoint) ->
     [{"bag-A", "127.0.0.1", rtcs:pb_port(1)},
      {"bag-B", "127.0.0.1", rtcs:pb_port(NumNodes + 1)},
@@ -44,11 +43,23 @@ bags(NumNodes, disjoint) ->
      {"bag-D", "127.0.0.1", rtcs:pb_port(NumNodes + 3)},
      {"bag-E", "127.0.0.1", rtcs:pb_port(NumNodes + 4)}].
 
+bags(NumNodes, NodeOffset, shared) ->
+    [{"bag-A", "127.0.0.1", rtcs:pb_port(NodeOffset)},
+     {"bag-B", "127.0.0.1", rtcs:pb_port(NodeOffset + NumNodes)},
+     {"bag-C", "127.0.0.1", rtcs:pb_port(NodeOffset + NumNodes + 1)}].
+
 weights(disjoint) ->
     [{manifest, "bag-B", 100},
      {manifest, "bag-C", 100},
      {block,    "bag-D", 100},
-     {block,    "bag-E", 100}].
+     {block,    "bag-E", 100}];
+weights(shared) ->
+    [{all, "bag-A", 100},
+     {all, "bag-B", 100},
+     {all, "bag-C", 100}].
+
+set_zero_weight() ->
+    set_weights([{all, "bag-A", 0}]).
 
 set_weights(BagFlavor) when is_atom(BagFlavor) ->
     set_weights(weights(BagFlavor));

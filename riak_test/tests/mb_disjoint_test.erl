@@ -32,8 +32,10 @@ confirm() ->
     ?assertMatch([{buckets, [[{name, ?TEST_BUCKET}, _]]}],
                  erlcloud_s3:list_buckets(UserConfig)),
 
-    assert_object_in_expected_bag(RiakNodes, UserConfig, normal),
-    assert_object_in_expected_bag(RiakNodes, UserConfig, multipart),
+    assert_object_in_expected_bag(RiakNodes, UserConfig, normal,
+                                  ?TEST_BUCKET, ?KEY_NORMAL),
+    assert_object_in_expected_bag(RiakNodes, UserConfig, multipart,
+                                  ?TEST_BUCKET, ?KEY_MULTIPART),
 
     pass.
 
@@ -44,9 +46,9 @@ assert_bucket_create_delete_twice(UserConfig) ->
     ?assertEqual(ok, erlcloud_s3:delete_bucket(?TEST_BUCKET_CREATE_DELETE, UserConfig)),
     ok.
 
-assert_object_in_expected_bag(RiakNodes, UserConfig, UploadType) ->
-    {Bucket, Key, Content} = upload(UserConfig, UploadType),
-    assert_whole_content(Bucket, Key, Content, UserConfig),
+assert_object_in_expected_bag(RiakNodes, UserConfig, UploadType, B, K) ->
+    {Bucket, Key, Content} = rtcs_object:upload(UserConfig, UploadType, B, K),
+    rtcs_object:assert_whole_content(UserConfig, Bucket, Key, Content),
     [_BagA, _BagB, BagC, BagD, BagE] = RiakNodes,
 
     %% riak-test-bucket goes to BagC, definitely
@@ -60,28 +62,3 @@ assert_object_in_expected_bag(RiakNodes, UserConfig, UploadType) ->
                end,
     ok = rtcs_bag:assert_block_in_single_bag(Bucket, M, RiakNodes, BlockBag),
     ok.
-
-upload(UserConfig, normal) ->
-    Content = crypto:rand_bytes(mb(4)),
-    erlcloud_s3:put_object(?TEST_BUCKET, ?KEY_NORMAL, Content, UserConfig),
-    {?TEST_BUCKET, ?KEY_NORMAL, Content};
-upload(UserConfig, multipart) ->
-    Content = rtcs_multipart:multipart_upload(?TEST_BUCKET, ?KEY_MULTIPART,
-                                              %% [mb(10), mb(5), mb(9) + 123, mb(6), 400],
-                                              [mb(10), 400],
-                                              UserConfig),
-    {?TEST_BUCKET, ?KEY_MULTIPART, Content}.
-
-mb(MegaBytes) ->
-    MegaBytes * 1024 * 1024.
-
-assert_whole_content(Bucket, Key, ExpectedContent, Config) ->
-    Obj = erlcloud_s3:get_object(Bucket, Key, Config),
-    assert_whole_content(ExpectedContent, Obj).
-
-assert_whole_content(ExpectedContent, ResultObj) ->
-    Content = proplists:get_value(content, ResultObj),
-    ContentLength = proplists:get_value(content_length, ResultObj),
-    ?assertEqual(byte_size(ExpectedContent), list_to_integer(ContentLength)),
-    ?assertEqual(byte_size(ExpectedContent), byte_size(Content)),
-    ?assertEqual(ExpectedContent, Content).

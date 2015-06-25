@@ -39,7 +39,7 @@ history() ->
      {?MODULE  , set_uniform_weights, []},
      {cs_suites, run,                 ["mb-uniform"]}
     ].
-    
+
 setup_single_bag() ->
     rtcs:setupNxMsingles(2, 4, custom_configs(), current).
 
@@ -75,7 +75,7 @@ transition_to_mb(State) ->
     {0, ListWeightRes} = rtcs_bag:list_weight(),
     lager:info("Weight disjoint: ~s~n", [ListWeightRes]),
     {ok, State}.
-    
+
 set_uniform_weights(State) ->
     rtcs_bag:set_weights(uniform_all_weights()),
     {0, ListWeightRes} = rtcs_bag:list_weight(),
@@ -88,108 +88,3 @@ uniform_all_weights() ->
      {all, "bag-C", 100},
      {all, "bag-D", 100},
      {all, "bag-E", 100}].
-    
-
-%%     OldInOldContent = setup_old_bucket_and_key(UserConfig, ?OLD_BUCKET, ?OLD_KEY_IN_OLD),
-%%     rtcs:assert_error_log_empty(1),
-
-%%     transition_to_multibag_configuration(
-%%       UserConfig, lists:zip(CSNodes, RiakNodes), StanchionNode),
-%%     ?assertEqual(ok, erlcloud_s3:create_bucket(?NEW_BUCKET, UserConfig)),
-%%     NewInOldContent = rand_content(),
-%%     erlcloud_s3:put_object(?OLD_BUCKET, ?NEW_KEY_IN_OLD, NewInOldContent, UserConfig),
-%%     NewInNewContent = rand_content(),
-%%     erlcloud_s3:put_object(?NEW_BUCKET, ?NEW_KEY_IN_NEW, NewInNewContent, UserConfig),
-
-%%     assert_whole_content(?OLD_BUCKET, ?OLD_KEY_IN_OLD, OldInOldContent, UserConfig),
-%%     assert_whole_content(?OLD_BUCKET, ?NEW_KEY_IN_OLD, NewInOldContent, UserConfig),
-%%     assert_whole_content(?NEW_BUCKET, ?NEW_KEY_IN_NEW, NewInNewContent, UserConfig),
-
-%%     %% TODO: s3 list for two buckets.
-%%     [BagA, _BagB, BagC, BagD, BagE] = RiakNodes,
-
-%%     %% Assert manifests are in proper bags
-%%     lager:info("Manifests in the old bucket are in the master bag"),
-%%     {_, MOldInOld} = rtcs_bag:assert_manifest_in_single_bag(
-%%                        ?OLD_BUCKET, ?OLD_KEY_IN_OLD, RiakNodes, BagA),
-%%     {_, MNewInOld} = rtcs_bag:assert_manifest_in_single_bag(
-%%                        ?OLD_BUCKET, ?NEW_KEY_IN_OLD, RiakNodes, BagA),
-%%     lager:info("A manifest in the new bucket is in non-master bag C"),
-%%     {_, MNewInNew} = rtcs_bag:assert_manifest_in_single_bag(
-%%                        ?NEW_BUCKET, ?NEW_KEY_IN_NEW, RiakNodes, BagC),
-
-%%     %% Assert blocks are in proper bags
-%%     lager:info("Old blocks in the old bucket are in the master bag"),
-%%     ok = rtcs_bag:assert_block_in_single_bag(?OLD_BUCKET, MOldInOld, RiakNodes, BagA),
-%%     lager:info("New blocks in the old/new bucket are in one of non-master bags D or E"),
-%%     [assert_block_bag(B, K, M, RiakNodes, [BagD, BagE]) ||
-%%         {B, K, M} <- [{?OLD_BUCKET, ?NEW_KEY_IN_OLD, MNewInOld},
-%%                       {?NEW_BUCKET, ?NEW_KEY_IN_NEW, MNewInNew}]],
-
-%%     assert_gc_run(hd(CSNodes), UserConfig),
-%%     [ok = rtcs_bag:assert_no_manifest_in_any_bag(B, K, RiakNodes) ||
-%%         {B, K} <- [{?OLD_BUCKET, ?OLD_KEY_IN_OLD},
-%%                    {?OLD_BUCKET, ?NEW_KEY_IN_OLD},
-%%                    {?NEW_BUCKET, ?NEW_KEY_IN_NEW}]],
-%%     %% [ok = rtcs_bag:assert_no_block_in_any_bag(B, M, RiakNodes) ||
-%%     [ok = rtcs_bag:assert_no_block_in_any_bag(B, M, RiakNodes) ||
-%%         {B, M} <- [{?OLD_BUCKET, MOldInOld},
-%%                    {?OLD_BUCKET, MNewInOld},
-%%                    {?NEW_BUCKET, MNewInNew}]],
-%%     rtcs:assert_error_log_empty(1),
-%%     pass.
-
-%% assert_block_bag(Bucket, Key, Manifest, RiakNodes, [BagD, BagE]) ->
-%%     BlockBag = case rtcs_bag:high_low({Bucket, Key, Manifest}) of
-%%                    low  -> BagD;
-%%                    high -> BagE
-%%                end,
-%%     ok = rtcs_bag:assert_block_in_single_bag(Bucket, Manifest, RiakNodes, BlockBag),
-%%     ok.
-
-%% setup_old_bucket_and_key(UserConfig, Bucket, Key) ->
-%%     lager:info("creating bucket ~p", [Bucket]),
-%%     ?assertEqual(ok, erlcloud_s3:create_bucket(Bucket, UserConfig)),
-%%     Content = rand_content(),
-%%     erlcloud_s3:put_object(Bucket, Key, Content, UserConfig),
-%%     Content.
-
-%% rand_content() ->
-%%     crypto:rand_bytes(4 * 1024 * 1024).
-
-
-%% assert_whole_content(Bucket, Key, ExpectedContent, Config) ->
-%%     Obj = erlcloud_s3:get_object(Bucket, Key, Config),
-%%     assert_whole_content(ExpectedContent, Obj).
-
-%% assert_whole_content(ExpectedContent, ResultObj) ->
-%%     Content = proplists:get_value(content, ResultObj),
-%%     ContentLength = proplists:get_value(content_length, ResultObj),
-%%     ?assertEqual(byte_size(ExpectedContent), list_to_integer(ContentLength)),
-%%     ?assertEqual(byte_size(ExpectedContent), byte_size(Content)),
-%%     ?assertEqual(ExpectedContent, Content).
-
-%% assert_gc_run(CSNode, UserConfig) ->
-%%     rtcs:gc(1, "set-interval infinity"),
-%%     rtcs:gc(1, "set-leeway 1"),
-%%     rtcs:gc(1, "cancel"),
-
-%%     erlcloud_s3:delete_object(?OLD_BUCKET, ?OLD_KEY_IN_OLD, UserConfig),
-%%     timer:sleep(2000),
-%%     erlcloud_s3:delete_object(?OLD_BUCKET, ?NEW_KEY_IN_OLD, UserConfig),
-%%     erlcloud_s3:delete_object(?NEW_BUCKET, ?NEW_KEY_IN_NEW, UserConfig),
-%%     %% [erlcloud_s3:delete_object(B, K, UserConfig) ||
-%%     %%     {B, K} <- [{?OLD_BUCKET, ?OLD_KEY_IN_OLD},
-%%     %%                {?OLD_BUCKET, ?NEW_KEY_IN_OLD},
-%%     %%                {?NEW_BUCKET, ?NEW_KEY_IN_NEW}]],
-
-%%     %% Ensure the leeway has expired
-%%     timer:sleep(2000),
-
-%%     rt:setup_log_capture(CSNode),
-%%     rtcs:gc(1, "batch 1"),
-%%     true = rt:expect_in_log(CSNode,
-%%                             "Finished garbage collection: \\d+ seconds, "
-%%                             "\\d+ batch_count, \\d+ batch_skips, "
-%%                             "\\d+ manif_count, \\d+ block_count"),
-%%     ok.

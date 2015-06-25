@@ -33,9 +33,12 @@ confirm() ->
     NewInNewContent = rand_content(),
     erlcloud_s3:put_object(?NEW_BUCKET, ?NEW_KEY_IN_NEW, NewInNewContent, UserConfig),
 
-    assert_whole_content(?OLD_BUCKET, ?OLD_KEY_IN_OLD, OldInOldContent, UserConfig),
-    assert_whole_content(?OLD_BUCKET, ?NEW_KEY_IN_OLD, NewInOldContent, UserConfig),
-    assert_whole_content(?NEW_BUCKET, ?NEW_KEY_IN_NEW, NewInNewContent, UserConfig),
+    rtcs_object:assert_whole_content(
+      UserConfig, ?OLD_BUCKET, ?OLD_KEY_IN_OLD, OldInOldContent),
+    rtcs_object:assert_whole_content(
+      UserConfig, ?OLD_BUCKET, ?NEW_KEY_IN_OLD, NewInOldContent),
+    rtcs_object:assert_whole_content(
+      UserConfig, ?NEW_BUCKET, ?NEW_KEY_IN_NEW, NewInNewContent),
 
     %% TODO: s3 list for two buckets.
     [BagA, _BagB, BagC, BagD, BagE] = RiakNodes,
@@ -117,17 +120,6 @@ transition_to_multibag_configuration(AdminConfig, NodeList, StanchionNode) ->
     lager:info("Weight: ~s~n", [ListWeightRes]),
     ok.
 
-assert_whole_content(Bucket, Key, ExpectedContent, Config) ->
-    Obj = erlcloud_s3:get_object(Bucket, Key, Config),
-    assert_whole_content(ExpectedContent, Obj).
-
-assert_whole_content(ExpectedContent, ResultObj) ->
-    Content = proplists:get_value(content, ResultObj),
-    ContentLength = proplists:get_value(content_length, ResultObj),
-    ?assertEqual(byte_size(ExpectedContent), list_to_integer(ContentLength)),
-    ?assertEqual(byte_size(ExpectedContent), byte_size(Content)),
-    ?assertEqual(ExpectedContent, Content).
-
 assert_gc_run(CSNode, UserConfig) ->
     rtcs:gc(1, "set-interval infinity"),
     rtcs:gc(1, "set-leeway 1"),
@@ -137,10 +129,6 @@ assert_gc_run(CSNode, UserConfig) ->
     timer:sleep(2000),
     erlcloud_s3:delete_object(?OLD_BUCKET, ?NEW_KEY_IN_OLD, UserConfig),
     erlcloud_s3:delete_object(?NEW_BUCKET, ?NEW_KEY_IN_NEW, UserConfig),
-    %% [erlcloud_s3:delete_object(B, K, UserConfig) ||
-    %%     {B, K} <- [{?OLD_BUCKET, ?OLD_KEY_IN_OLD},
-    %%                {?OLD_BUCKET, ?NEW_KEY_IN_OLD},
-    %%                {?NEW_BUCKET, ?NEW_KEY_IN_NEW}]],
 
     %% Ensure the leeway has expired
     timer:sleep(2000),
