@@ -117,6 +117,8 @@ handle_call({set_manifest_bag, ManifestBagId}, _From,
 handle_call({set_manifest_bag, RequestedBagId}, _From,
             #state{manifest_bag=ManifestBagId} = State) ->
     {reply, {error, {manifest_bag_already_set, RequestedBagId, ManifestBagId}}, State};
+handle_call(get_manifest_bag, _From, #state{manifest_bag=ManifestBagId} = State) ->
+    {reply, {ok, ManifestBagId}, State};
 
 handle_call({set_manifest, {UUID, Manifest}}, _From,
             #state{manifest=uninitialized} = State) ->
