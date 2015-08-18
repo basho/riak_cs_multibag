@@ -20,16 +20,16 @@ confirm() ->
 custom_configs() ->
     %% This branch is only for debugging this module
     [{riak,
-      rtcs:riak_config([{bitcask, [{max_file_size, 4*1024*1024}]}])},
-     {cs, rtcs:cs_config([{leeway_seconds, 1}])}].
+      rtcs_config:riak_config([{bitcask, [{max_file_size, 4*1024*1024}]}])},
+     {cs, rtcs_config:cs_config([{leeway_seconds, 1}])}].
 
 custom_configs(MultiBags) ->
     %% This branch is only for debugging this module
     [{riak,
-      rtcs:riak_config([{bitcask, [{max_file_size, 4*1024*1024}]}])},
-     {cs, rtcs:cs_config([{leeway_seconds, 1}],
+      rtcs_config:riak_config([{bitcask, [{max_file_size, 4*1024*1024}]}])},
+     {cs, rtcs_config:cs_config([{leeway_seconds, 1}],
                          [{riak_cs_multibag, [{bags, MultiBags}]}])},
-     {stanchion, rtcs:stanchion_config([{bags, MultiBags}])}].
+     {stanchion, rtcs_config:stanchion_config([{bags, MultiBags}])}].
 
 history() ->
     [
@@ -50,24 +50,24 @@ transition_to_mb(State) ->
     NodeList = lists:zip(CsNodes, RiakNodes),
     AdminCredential = cs_suites:admin_credential(State),
     Configs = custom_configs(rtcs_bag:bags(disjoint)),
-    rtcs:stop_cs_and_stanchion_nodes(NodeList, current),
-    rtcs:stop_stanchion(),
+    rtcs_exec:stop_cs_and_stanchion_nodes(NodeList, current),
+    rtcs_exec:stop_stanchion(),
     %% Because there are noises from poolboy shutdown at stopping riak-cs,
     %% truncate error log here and re-assert emptiness of error.log file later.
     rtcs:truncate_error_log(1),
 
     rt:pmap(fun({_CSNode, RiakNode}) ->
                     N = rt_cs_dev:node_id(RiakNode),
-                    rtcs:update_cs_config(rtcs:get_rt_config(cs, current),
+                    rtcs_config:update_cs_config(rtcs_config:get_rt_config(cs, current),
                                           N,
                                           proplists:get_value(cs, Configs),
                                           AdminCredential),
-                    rtcs:start_cs(N)
+                    rtcs_exec:start_cs(N)
             end, NodeList),
-    rtcs:update_stanchion_config(rtcs:get_rt_config(stanchion, current),
+    rtcs_config:update_stanchion_config(rtcs_config:get_rt_config(stanchion, current),
                                  proplists:get_value(stanchion, Configs),
                                  AdminCredential),
-    rtcs:start_stanchion(),
+    rtcs_exec:start_stanchion(),
     [ok = rt:wait_until_pingable(CsNode) || CsNode <- CsNodes],
     ok = rt:wait_until_pingable(StanchionNode),
     rt:setup_log_capture(hd(cs_suites:nodes_of(cs, State))),
