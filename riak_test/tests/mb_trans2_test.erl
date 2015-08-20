@@ -58,13 +58,13 @@ transition_to_mb(State) ->
 
     rt:pmap(fun({_CSNode, RiakNode}) ->
                     N = rt_cs_dev:node_id(RiakNode),
-                    rtcs_config:update_cs_config(rtcs_config:get_rt_config(cs, current),
+                    rtcs_config:update_cs_config(rtcs_config:devpath(cs, current),
                                           N,
                                           proplists:get_value(cs, Configs),
                                           AdminCredential),
                     rtcs_exec:start_cs(N)
             end, NodeList),
-    rtcs_config:update_stanchion_config(rtcs_config:get_rt_config(stanchion, current),
+    rtcs_config:update_stanchion_config(rtcs_config:devpath(stanchion, current),
                                  proplists:get_value(stanchion, Configs),
                                  AdminCredential),
     rtcs_exec:start_stanchion(),
