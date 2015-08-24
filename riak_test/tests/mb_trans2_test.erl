@@ -57,7 +57,7 @@ transition_to_mb(State) ->
     rtcs:truncate_error_log(1),
 
     rt:pmap(fun({_CSNode, RiakNode}) ->
-                    N = rt_cs_dev:node_id(RiakNode),
+                    N = rtcs_dev:node_id(RiakNode),
                     rtcs_config:update_cs_config(rtcs_config:devpath(cs, current),
                                           N,
                                           proplists:get_value(cs, Configs),

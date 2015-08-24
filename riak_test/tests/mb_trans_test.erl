@@ -102,7 +102,7 @@ transition_to_multibag_configuration(AdminConfig, NodeList, StanchionNode) ->
     rtcs:truncate_error_log(1),
 
     rt:pmap(fun({_CSNode, RiakNode}) ->
-                    N = rt_cs_dev:node_id(RiakNode),
+                    N = rtcs_dev:node_id(RiakNode),
                     rtcs_config:update_cs_config(rt_config:get(?CS_CURRENT),
                                           N,
                                           proplists:get_value(cs, Configs),

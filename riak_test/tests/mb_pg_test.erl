@@ -49,12 +49,12 @@ confirm() ->
     upload_and_assert_proxy_get(UserWest, UserEast),
 
     lager:info("Disable proxy_get and confirm it does not work actually."),
-    [rtcs_exec:disable_proxy_get(rt_cs_dev:node_id(WLeader), current, EName) ||
+    [rtcs_exec:disable_proxy_get(rtcs_dev:node_id(WLeader), current, EName) ||
         {{WLeader, _WNodes, _WName}, {_ELeader, _ENodes, EName}} <- Pairs],
     assert_proxy_get_does_not_work(UserWest, UserEast),
 
     lager:info("Enable proxy_get again."),
-    [rtcs_exec:enable_proxy_get(rt_cs_dev:node_id(WLeader), current, EName) ||
+    [rtcs_exec:enable_proxy_get(rtcs_dev:node_id(WLeader), current, EName) ||
         {{WLeader, _WNodes, _WName}, {_ELeader, _ENodes, EName}} <- Pairs],
     upload_and_assert_proxy_get(UserWest, UserEast),
 
@@ -124,9 +124,9 @@ setup_clusters() ->
     BagsConf = fun(N) when N =< 4 -> rtcs_bag:bags(2, 1, shared);
                   (_)             -> rtcs_bag:bags(2, 5, shared) end,
     rt:pmap(fun(N) ->
-                rt_cs_dev:set_advanced_conf({cs, current, N}, [{riak_cs_multibag, [{bags, BagsConf(N)}]}])
+                rtcs_dev:set_advanced_conf({cs, current, N}, [{riak_cs_multibag, [{bags, BagsConf(N)}]}])
             end, lists:seq(1, 8)),
-    rt_cs_dev:set_advanced_conf(stanchion, [{stanchion, [{bags, BagsConf(1)}]}]),
+    rtcs_dev:set_advanced_conf(stanchion, [{stanchion, [{bags, BagsConf(1)}]}]),
     {_AdminConfig, {RiakNodes, _CSs, _Stanchion}} =
         rtcs:setup_clusters(rtcs_config:configs([]), JoinFun, 8, current),
 
@@ -157,7 +157,7 @@ setup_clusters() ->
          rt:wait_until_ring_converged(WNodes),
          repl_helpers:enable_realtime(WLeader, EName),
          repl_helpers:start_realtime(WLeader, EName),
-         rtcs_exec:enable_proxy_get(rt_cs_dev:node_id(WLeader), current, EName),
+         rtcs_exec:enable_proxy_get(rtcs_dev:node_id(WLeader), current, EName),
          Status = rpc:call(WLeader, riak_repl_console, status, [quiet]),
          case proplists:get_value(proxy_get_enabled, Status) of
              undefined -> ?assert(false);
