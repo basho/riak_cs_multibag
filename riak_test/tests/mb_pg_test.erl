@@ -123,9 +123,9 @@ setup_clusters() ->
     BagsConf = fun(N) when N =< 4 -> rtcs_bag:bags(2, 1, shared);
                   (_)             -> rtcs_bag:bags(2, 5, shared) end,
     rt:pmap(fun(N) ->
-                rtcs_dev:set_advanced_conf({cs, current, N}, [{riak_cs_multibag, [{bags, BagsConf(N)}]}])
+                rtcs:set_advanced_conf({cs, current, N}, [{riak_cs_multibag, [{bags, BagsConf(N)}]}])
             end, lists:seq(1, 8)),
-    rtcs_dev:set_advanced_conf(stanchion, [{stanchion, [{bags, BagsConf(1)}]}]),
+    rtcs:set_advanced_conf(stanchion, [{stanchion, [{bags, BagsConf(1)}]}]),
     {_AdminConfig, {RiakNodes, _CSs, _Stanchion}} =
         rtcs:setup_clusters(rtcs_config:configs([]), JoinFun, 8, current),
 
