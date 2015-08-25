@@ -28,9 +28,8 @@ confirm() ->
     {{_WestALeader, WestANodes, _WestAName},
      {_EastALeader, EastANodes, _EastAName}} = hd(Pairs),
 
-    {AccessKeyId1, SecretAccessKey1} = rtcs_admin:create_user(hd(WestANodes), 1),
-    UserWest = rtcs_config:config(AccessKeyId1, SecretAccessKey1, rtcs_config:cs_port(hd(WestANodes))),
-    UserEast = rtcs_config:config(AccessKeyId1, SecretAccessKey1, rtcs_config:cs_port(hd(EastANodes))),
+    UserWest = rtcs_admin:create_user(hd(WestANodes), 1),
+    UserEast = rtcs_admin:aws_config(UserWest,[{port, rtcs_config:cs_port(hd(EastANodes))}]),
 
     lager:info("Initialize weights by zero, without multibag"),
     set_zero_weight(),
