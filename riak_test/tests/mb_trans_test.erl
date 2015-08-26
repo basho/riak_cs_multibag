@@ -95,24 +95,24 @@ rand_content() ->
 transition_to_multibag_configuration(AdminConfig, NodeList, StanchionNode) ->
     Configs = rtcs_bag:configs(rtcs_bag:bags(disjoint)),
     #aws_config{access_key_id=K, secret_access_key=S} = AdminConfig,
-    rtcs:stop_cs_and_stanchion_nodes(NodeList, current),
-    rtcs:stop_stanchion(),
+    rtcs_exec:stop_cs_and_stanchion_nodes(NodeList, current),
+    rtcs_exec:stop_stanchion(),
     %% Because there are noises from poolboy shutdown at stopping riak-cs,
     %% truncate error log here and re-assert emptiness of error.log file later.
     rtcs:truncate_error_log(1),
 
     rt:pmap(fun({_CSNode, RiakNode}) ->
-                    N = rt_cs_dev:node_id(RiakNode),
-                    rtcs:update_cs_config(rt_config:get(?CS_CURRENT),
+                    N = rtcs_dev:node_id(RiakNode),
+                    rtcs_config:update_cs_config(rt_config:get(?CS_CURRENT),
                                           N,
                                           proplists:get_value(cs, Configs),
                                           {K, S}),
-                    rtcs:start_cs(N)
+                    rtcs_exec:start_cs(N)
             end, NodeList),
-    rtcs:update_stanchion_config(rt_config:get(?STANCHION_CURRENT),
+    rtcs_config:update_stanchion_config(rt_config:get(?STANCHION_CURRENT),
                                  proplists:get_value(stanchion, Configs),
                                  {K, S}),
-    rtcs:start_stanchion(),
+    rtcs_exec:start_stanchion(),
     [ok = rt:wait_until_pingable(CSNode) || {CSNode, _RiakNode} <- NodeList],
     rt:wait_until_pingable(StanchionNode),
     rtcs_bag:set_weights(rtcs_bag:weights(disjoint)),
@@ -121,9 +121,9 @@ transition_to_multibag_configuration(AdminConfig, NodeList, StanchionNode) ->
     ok.
 
 assert_gc_run(CSNode, UserConfig) ->
-    rtcs:gc(1, "set-interval infinity"),
-    rtcs:gc(1, "set-leeway 1"),
-    rtcs:gc(1, "cancel"),
+    rtcs_exec:gc(1, "set-interval infinity"),
+    rtcs_exec:gc(1, "set-leeway 1"),
+    rtcs_exec:gc(1, "cancel"),
 
     erlcloud_s3:delete_object(?OLD_BUCKET, ?OLD_KEY_IN_OLD, UserConfig),
     timer:sleep(2000),
@@ -134,7 +134,7 @@ assert_gc_run(CSNode, UserConfig) ->
     timer:sleep(2000),
 
     rt:setup_log_capture(CSNode),
-    rtcs:gc(1, "batch 1"),
+    rtcs_exec:gc(1, "batch 1"),
     true = rt:expect_in_log(CSNode,
                             "Finished garbage collection: \\d+ seconds, "
                             "\\d+ batch_count, \\d+ batch_skips, "

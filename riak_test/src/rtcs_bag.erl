@@ -9,14 +9,14 @@
 %% Setup utilities
 
 configs(MultiBags) ->
-    rtcs:configs(
-      [{cs, rtcs:cs_config([], [{riak_cs_multibag, [{bags, MultiBags}]}])},
-       {stanchion, rtcs:stanchion_config([{bags, MultiBags}])}]).
+    rtcs_config:configs(
+      [{cs, rtcs_config:cs_config([], [{riak_cs_multibag, [{bags, MultiBags}]}])},
+       {stanchion, rtcs_config:stanchion_config([{bags, MultiBags}])}]).
 
 %% BagFlavor is `disjoint' only for now
 %% TODO: Other nodes than CS node 1 have wrong riak_pb_port configuration.
 flavored_setup(NumNodes, {multibag, BagFlavor}, CustomConfigs, Vsn) ->
-    Configs = rtcs:configs(CustomConfigs),
+    Configs = rtcs_config:configs(CustomConfigs),
     MultiBags = bags(NumNodes, BagFlavor),
     [Riak, Cs, Stanchion] = [proplists:get_value(T, Configs) ||
                                 T <- [riak, cs, stanchion]],
@@ -37,16 +37,16 @@ bags(disjoint) ->
     bags(1, disjoint).
 
 bags(NumNodes, disjoint) ->
-    [{"bag-A", "127.0.0.1", rtcs:pb_port(1)},
-     {"bag-B", "127.0.0.1", rtcs:pb_port(NumNodes + 1)},
-     {"bag-C", "127.0.0.1", rtcs:pb_port(NumNodes + 2)},
-     {"bag-D", "127.0.0.1", rtcs:pb_port(NumNodes + 3)},
-     {"bag-E", "127.0.0.1", rtcs:pb_port(NumNodes + 4)}].
+    [{"bag-A", "127.0.0.1", rtcs_config:pb_port(1)},
+     {"bag-B", "127.0.0.1", rtcs_config:pb_port(NumNodes + 1)},
+     {"bag-C", "127.0.0.1", rtcs_config:pb_port(NumNodes + 2)},
+     {"bag-D", "127.0.0.1", rtcs_config:pb_port(NumNodes + 3)},
+     {"bag-E", "127.0.0.1", rtcs_config:pb_port(NumNodes + 4)}].
 
 bags(NumNodes, NodeOffset, shared) ->
-    [{"bag-A", "127.0.0.1", rtcs:pb_port(NodeOffset)},
-     {"bag-B", "127.0.0.1", rtcs:pb_port(NodeOffset + NumNodes)},
-     {"bag-C", "127.0.0.1", rtcs:pb_port(NodeOffset + NumNodes + 1)}].
+    [{"bag-A", "127.0.0.1", rtcs_config:pb_port(NodeOffset)},
+     {"bag-B", "127.0.0.1", rtcs_config:pb_port(NodeOffset + NumNodes)},
+     {"bag-C", "127.0.0.1", rtcs_config:pb_port(NodeOffset + NumNodes + 1)}].
 
 weights(disjoint) ->
     [{manifest, "bag-B", 100},
@@ -119,13 +119,13 @@ pbc_start_link(Port) ->
     Pid.
 
 multibagcmd(Path, N, Args) ->
-    lists:flatten(io_lib:format("~s-multibag ~s", [rtcs:riakcs_binpath(Path, N), Args])).
+    lists:flatten(io_lib:format("~s-multibag ~s", [rtcs_config:riakcs_binpath(Path, N), Args])).
 
 list_weight() ->
     list_weight(1).
 
 list_weight(N) ->
-    Cmd = multibagcmd(rt_config:get(rtcs:cs_current()), N, io_lib:format("~s", [weight])),
+    Cmd = multibagcmd(rt_config:get(rtcs_config:cs_current()), N, io_lib:format("~s", [weight])),
     lager:info("Running ~s", [Cmd]),
     rt:cmd(Cmd).
 
@@ -135,13 +135,13 @@ bag_weight(N, Kind, BagId, Weight) ->
                  manifest -> "weight-manifest";
                  block ->    "weight-block"
              end,
-    Cmd = multibagcmd(rt_config:get(rtcs:cs_current()), N,
+    Cmd = multibagcmd(rt_config:get(rtcs_config:cs_current()), N,
                              io_lib:format("~s ~s ~B", [SubCmd, BagId, Weight])),
     lager:info("Running ~s", [Cmd]),
     rt:cmd(Cmd).
 
 bag_refresh(N) ->
-    Cmd = multibagcmd(rt_config:get(rtcs:cs_current()), N, "refresh"),
+    Cmd = multibagcmd(rt_config:get(rtcs_config:cs_current()), N, "refresh"),
     lager:info("Running ~p", [Cmd]),
     rt:cmd(Cmd).
 
