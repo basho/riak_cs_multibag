@@ -19,17 +19,15 @@ confirm() ->
 
 custom_configs() ->
     %% This branch is only for debugging this module
-    [{riak,
-      rtcs_config:riak_config([{bitcask, [{max_file_size, 4*1024*1024}]}])},
-     {cs, rtcs_config:cs_config([{leeway_seconds, 1}])}].
+    [{riak, [{bitcask, [{max_file_size, 4*1024*1024}]}]},
+     {cs,   [{riak_cs, [{leeway_seconds, 1}]}]}].
+
 
 custom_configs(MultiBags) ->
     %% This branch is only for debugging this module
-    [{riak,
-      rtcs_config:riak_config([{bitcask, [{max_file_size, 4*1024*1024}]}])},
-     {cs, rtcs_config:cs_config([{leeway_seconds, 1}],
-                         [{riak_cs_multibag, [{bags, MultiBags}]}])},
-     {stanchion, rtcs_config:stanchion_config([{bags, MultiBags}])}].
+    MultiBagConfigs = [{cs,   [{riak_cs_multibag, [{bags, MultiBags}]}]},
+                       {stanchion, [{stanchion, [{bags, MultiBags}]}]}],
+    rtcs_config:merge(custom_configs(), MultiBagConfigs).
 
 history() ->
     [

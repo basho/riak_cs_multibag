@@ -9,27 +9,16 @@
 %% Setup utilities
 
 configs(MultiBags) ->
-    rtcs_config:configs(
-      [{cs, rtcs_config:cs_config([], [{riak_cs_multibag, [{bags, MultiBags}]}])},
-       {stanchion, rtcs_config:stanchion_config([{bags, MultiBags}])}]).
+      [{cs, [{riak_cs_multibag, [{bags, MultiBags}]}]},
+       {stanchion, [{stanchion, [{bags, MultiBags}]}]}].
 
 %% BagFlavor is `disjoint' only for now
 %% TODO: Other nodes than CS node 1 have wrong riak_pb_port configuration.
 flavored_setup(NumNodes, {multibag, BagFlavor}, CustomConfigs, Vsn) ->
-    Configs = rtcs_config:configs(CustomConfigs),
     MultiBags = bags(NumNodes, BagFlavor),
-    [Riak, Cs, Stanchion] = [proplists:get_value(T, Configs) ||
-                                T <- [riak, cs, stanchion]],
-    UpdatedStanchion = lists:keystore(
-                         stanchion, 1, Stanchion,
-                         {stanchion,
-                          proplists:get_value(stanchion, Stanchion) ++
-                              [{bags, MultiBags}]}),
-    UpdatedConfigs = [{riak, Riak},
-                      {cs, Cs ++ [{riak_cs_multibag, [{bags, MultiBags}]}]},
-                      {stanchion, UpdatedStanchion}],
+    BagConfigs = configs(MultiBags),
     Singltons = 4,
-    SetupResult = rtcs:setupNxMsingles(NumNodes, Singltons, UpdatedConfigs, Vsn),
+    SetupResult = rtcs:setupNxMsingles(NumNodes, Singltons, rtcs_config:merge(CustomConfigs, BagConfigs), Vsn),
     set_weights(weights(BagFlavor)),
     SetupResult.
 
