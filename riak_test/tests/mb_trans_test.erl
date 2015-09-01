@@ -25,8 +25,7 @@ confirm() ->
     OldInOldContent = setup_old_bucket_and_key(UserConfig, ?OLD_BUCKET, ?OLD_KEY_IN_OLD),
     rtcs:assert_error_log_empty(1),
 
-    transition_to_multibag_configuration(
-      UserConfig, lists:zip(CSNodes, RiakNodes), StanchionNode),
+    transition_to_multibag_configuration(lists:zip(CSNodes, RiakNodes), StanchionNode),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?NEW_BUCKET, UserConfig)),
     NewInOldContent = rand_content(),
     erlcloud_s3:put_object(?OLD_BUCKET, ?NEW_KEY_IN_OLD, NewInOldContent, UserConfig),
@@ -92,9 +91,8 @@ setup_old_bucket_and_key(UserConfig, Bucket, Key) ->
 rand_content() ->
     crypto:rand_bytes(4 * 1024 * 1024).
 
-transition_to_multibag_configuration(AdminConfig, NodeList, StanchionNode) ->
+transition_to_multibag_configuration(NodeList, StanchionNode) ->
     Configs = rtcs_bag:configs(rtcs_bag:bags(disjoint)),
-    #aws_config{access_key_id=K, secret_access_key=S} = AdminConfig,
     rtcs_exec:stop_cs_and_stanchion_nodes(NodeList, current),
     rtcs_exec:stop_stanchion(),
     %% Because there are noises from poolboy shutdown at stopping riak-cs,
@@ -103,15 +101,12 @@ transition_to_multibag_configuration(AdminConfig, NodeList, StanchionNode) ->
 
     rt:pmap(fun({_CSNode, RiakNode}) ->
                     N = rtcs_dev:node_id(RiakNode),
-                    rtcs_config:update_cs_config(rt_config:get(?CS_CURRENT),
-                                          N,
-                                          proplists:get_value(cs, Configs),
-                                          {K, S}),
+                    rtcs:set_advanced_conf({cs, current, N},
+                                           proplists:get_value(cs, Configs)),
                     rtcs_exec:start_cs(N)
             end, NodeList),
-    rtcs_config:update_stanchion_config(rt_config:get(?STANCHION_CURRENT),
-                                 proplists:get_value(stanchion, Configs),
-                                 {K, S}),
+    rtcs:set_advanced_conf({stanchion, current},
+                           proplists:get_value(stanchion, Configs)),
     rtcs_exec:start_stanchion(),
     [ok = rt:wait_until_pingable(CSNode) || {CSNode, _RiakNode} <- NodeList],
     rt:wait_until_pingable(StanchionNode),
