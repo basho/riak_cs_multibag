@@ -20,12 +20,15 @@
 -define(NEW_KEY_IN_NEW, "new_key_in_new").
 
 confirm() ->
+    NodesInMaster = 1,
     %% setup single bag cluster at first
-    {UserConfig, {RiakNodes, CSNodes, StanchionNode}} = rtcs:setupNxMsingles(1, 4),
+    {UserConfig, {RiakNodes, CSNodes, StanchionNode}} =
+        rtcs:setupNxMsingles(NodesInMaster, 4),
     OldInOldContent = setup_old_bucket_and_key(UserConfig, ?OLD_BUCKET, ?OLD_KEY_IN_OLD),
     rtcs:assert_error_log_empty(1),
 
-    transition_to_multibag_configuration(lists:zip(CSNodes, RiakNodes), StanchionNode),
+    transition_to_multibag_configuration(
+      NodesInMaster, lists:zip(CSNodes, RiakNodes), StanchionNode),
     ?assertEqual(ok, erlcloud_s3:create_bucket(?NEW_BUCKET, UserConfig)),
     NewInOldContent = rand_content(),
     erlcloud_s3:put_object(?OLD_BUCKET, ?NEW_KEY_IN_OLD, NewInOldContent, UserConfig),
@@ -91,8 +94,8 @@ setup_old_bucket_and_key(UserConfig, Bucket, Key) ->
 rand_content() ->
     crypto:rand_bytes(4 * 1024 * 1024).
 
-transition_to_multibag_configuration(NodeList, StanchionNode) ->
-    Configs = rtcs_bag:configs(rtcs_bag:bags(disjoint)),
+transition_to_multibag_configuration(NodesInMaster, NodeList, StanchionNode) ->
+    BagConf = rtcs_bag:conf(NodesInMaster, disjoint),
     rtcs_exec:stop_cs_and_stanchion_nodes(NodeList, current),
     rtcs_exec:stop_stanchion(),
     %% Because there are noises from poolboy shutdown at stopping riak-cs,
@@ -101,12 +104,10 @@ transition_to_multibag_configuration(NodeList, StanchionNode) ->
 
     rt:pmap(fun({_CSNode, RiakNode}) ->
                     N = rtcs_dev:node_id(RiakNode),
-                    rtcs:set_advanced_conf({cs, current, N},
-                                           proplists:get_value(cs, Configs)),
+                    rtcs:set_conf({cs, current, N}, BagConf),
                     rtcs_exec:start_cs(N)
             end, NodeList),
-    rtcs:set_advanced_conf({stanchion, current},
-                           proplists:get_value(stanchion, Configs)),
+    rtcs:set_conf({stanchion, current}, BagConf),
     rtcs_exec:start_stanchion(),
     [ok = rt:wait_until_pingable(CSNode) || {CSNode, _RiakNode} <- NodeList],
     rt:wait_until_pingable(StanchionNode),
