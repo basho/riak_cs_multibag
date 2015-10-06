@@ -16,10 +16,12 @@
 -define(KEY_MULTIPART, "key_multipart").
 
 confirm() ->
+    NodesOfMasterBag = 1,
+    BagFlavor = disjoint,
+    rtcs_bag:set_conf(NodesOfMasterBag, BagFlavor),
     {UserConfig, {RiakNodes, _CSNodes, _Stanchion}} =
-        rtcs:setupNxMsingles(1, 4, rtcs_bag:configs(rtcs_bag:bags(disjoint)),
-                             current),
-    rtcs_bag:set_weights(disjoint),
+        rtcs:setupNxMsingles(NodesOfMasterBag, 4, [], current),
+    rtcs_bag:set_weights(BagFlavor),
 
     lager:info("User is valid on the cluster, and has no buckets"),
     ?assertEqual([{buckets, []}], erlcloud_s3:list_buckets(UserConfig)),

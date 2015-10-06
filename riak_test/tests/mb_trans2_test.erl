@@ -6,14 +6,15 @@
 %% to multiple bag one, another pattern with `cs_suites'.
 
 -export([confirm/0]).
--export([transition_to_mb/1,
+-export([transition_to_mb/2,
          set_uniform_weights/1]).
 
 confirm() ->
     rt_config:set(console_log_level, info),
-    SetupRes = setup_single_bag(),
+    NodesInMaster = 2,
+    SetupRes = setup_single_bag(NodesInMaster),
     {ok, InitialState} = cs_suites:new(SetupRes),
-    {ok, EvolvedState} = cs_suites:fold_with_state(InitialState, history()),
+    {ok, EvolvedState} = cs_suites:fold_with_state(InitialState, history(NodesInMaster)),
     {ok, _FinalState}  = cs_suites:cleanup(EvolvedState),
     pass.
 
@@ -22,32 +23,24 @@ custom_configs() ->
     [{riak, [{bitcask, [{max_file_size, 4*1024*1024}]}]},
      {cs,   [{riak_cs, [{leeway_seconds, 1}]}]}].
 
-
-custom_configs(MultiBags) ->
-    %% This branch is only for debugging this module
-    MultiBagConfigs = [{cs,   [{riak_cs_multibag, [{bags, MultiBags}]}]},
-                       {stanchion, [{stanchion, [{bags, MultiBags}]}]}],
-    rtcs_config:merge(custom_configs(), MultiBagConfigs).
-
-history() ->
+history(NodesInMaster) ->
     [
      {cs_suites, run,                 ["single-bag"]},
-     {?MODULE  , transition_to_mb,    []},
+     {?MODULE  , transition_to_mb,    [NodesInMaster]},
      {cs_suites, run,                 ["mb-disjoint"]},
      {?MODULE  , set_uniform_weights, []},
      {cs_suites, run,                 ["mb-uniform"]}
     ].
 
-setup_single_bag() ->
-    rtcs:setupNxMsingles(2, 4, custom_configs(), current).
+setup_single_bag(NodesInMaster) ->
+    rtcs:setupNxMsingles(NodesInMaster, 4, custom_configs(), current).
 
-transition_to_mb(State) ->
+transition_to_mb(NodesInMaster, State) ->
     RiakNodes = cs_suites:nodes_of(riak, State),
     [StanchionNode] = cs_suites:nodes_of(stanchion, State),
     CsNodes = cs_suites:nodes_of(cs, State),
     NodeList = lists:zip(CsNodes, RiakNodes),
-    AdminCredential = cs_suites:admin_credential(State),
-    Configs = custom_configs(rtcs_bag:bags(disjoint)),
+    BagConf = rtcs_bag:conf(NodesInMaster, disjoint),
     rtcs_exec:stop_cs_and_stanchion_nodes(NodeList, current),
     rtcs_exec:stop_stanchion(),
     %% Because there are noises from poolboy shutdown at stopping riak-cs,
@@ -56,15 +49,10 @@ transition_to_mb(State) ->
 
     rt:pmap(fun({_CSNode, RiakNode}) ->
                     N = rtcs_dev:node_id(RiakNode),
-                    rtcs_config:update_cs_config(rtcs_config:devpath(cs, current),
-                                          N,
-                                          proplists:get_value(cs, Configs),
-                                          AdminCredential),
+                    rtcs:set_conf({cs, current, N}, BagConf),
                     rtcs_exec:start_cs(N)
             end, NodeList),
-    rtcs_config:update_stanchion_config(rtcs_config:devpath(stanchion, current),
-                                 proplists:get_value(stanchion, Configs),
-                                 AdminCredential),
+    rtcs:set_conf({stanchion, current}, BagConf),
     rtcs_exec:start_stanchion(),
     [ok = rt:wait_until_pingable(CsNode) || CsNode <- CsNodes],
     ok = rt:wait_until_pingable(StanchionNode),

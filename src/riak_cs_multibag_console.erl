@@ -1,10 +1,10 @@
 %% Copyright (c) 2014 Basho Technologies, Inc.  All Rights Reserved.
 
-%% @doc These functions are used by the riak-cs-bag command line script.
+%% @doc These functions are used by the riak-cs-supercluster command line script.
 
 -module(riak_cs_multibag_console).
 
--export(['list-bags'/1, weight/1, 'weight-manifest'/1, 'weight-block'/1]).
+-export(['list-members'/1, weight/1, 'weight-manifest'/1, 'weight-block'/1]).
 -export([show_weights/1, show_weights_for_bag/2, refresh/1]).
 
 -include("riak_cs_multibag.hrl").
@@ -26,7 +26,7 @@
 %%% Public API
 %%%===================================================================
 
-'list-bags'(_Args) ->
+'list-members'(_Args) ->
     ?SAFELY(list_bags(), "List all bags").
 
 weight([]) ->

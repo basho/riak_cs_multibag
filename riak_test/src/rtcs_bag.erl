@@ -8,12 +8,32 @@
 
 %% Setup utilities
 
+set_conf(NumNodes, BagFlavor) ->
+    BagConf = conf(NumNodes, BagFlavor),
+    rtcs:set_conf(cs, BagConf),
+    rtcs:set_conf(stanchion, BagConf),
+    ok.
+
+conf(NumNodes, BagFlavor) ->
+    conf(NumNodes, 1, BagFlavor).
+
+conf(NumNodes, NodeOffset, BagFlavor) ->
+    Bags = bags(NumNodes, NodeOffset, BagFlavor),
+    [{"supercluster.member." ++ BagId, IP ++ ":" ++ integer_to_list(Port)} ||
+        {BagId, IP, Port} <- Bags].
+
 configs(MultiBags) ->
       [{cs, [{riak_cs_multibag, [{bags, MultiBags}]}]},
        {stanchion, [{stanchion, [{bags, MultiBags}]}]}].
 
 %% BagFlavor is `disjoint' only for now
 %% TODO: Other nodes than CS node 1 have wrong riak_pb_port configuration.
+flavored_setup(NumNodes, {multibag, BagFlavor}, CustomConfigs, current = Vsn) ->
+    set_conf(NumNodes, BagFlavor),
+    Singltons = 4,
+    SetupResult = rtcs:setupNxMsingles(NumNodes, Singltons, CustomConfigs, Vsn),
+    set_weights(weights(BagFlavor)),
+    SetupResult;
 flavored_setup(NumNodes, {multibag, BagFlavor}, CustomConfigs, Vsn) ->
     MultiBags = bags(NumNodes, BagFlavor),
     BagConfigs = configs(MultiBags),
@@ -108,7 +128,7 @@ pbc_start_link(Port) ->
     Pid.
 
 multibagcmd(Path, N, Args) ->
-    lists:flatten(io_lib:format("~s-multibag ~s", [rtcs_config:riakcs_binpath(Path, N), Args])).
+    lists:flatten(io_lib:format("~s-supercluster ~s", [rtcs_config:riakcs_binpath(Path, N), Args])).
 
 list_weight() ->
     list_weight(1).

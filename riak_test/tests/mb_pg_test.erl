@@ -120,12 +120,15 @@ setup_clusters() ->
                       rt:join(WA2, WA1),
                       rt:join(EA2, EA1)
               end,
-    BagsConf = fun(N) when N =< 4 -> rtcs_bag:bags(2, 1, shared);
-                  (_)             -> rtcs_bag:bags(2, 5, shared) end,
+    WBagConf = rtcs_bag:conf(2, 1, shared),
+    EBagConf = rtcs_bag:conf(2, 5, shared),
+    rtcs:set_conf(stanchion, WBagConf),
     rt:pmap(fun(N) ->
-                rtcs:set_advanced_conf({cs, current, N}, [{riak_cs_multibag, [{bags, BagsConf(N)}]}])
-            end, lists:seq(1, 8)),
-    rtcs:set_advanced_conf(stanchion, [{stanchion, [{bags, BagsConf(1)}]}]),
+                    rtcs:set_conf({cs, current, N}, WBagConf)
+            end, lists:seq(1, 4)),
+    rt:pmap(fun(N) ->
+                    rtcs:set_conf({cs, current, N}, EBagConf)
+            end, lists:seq(5, 8)),
     {_AdminConfig, {RiakNodes, _CSs, _Stanchion}} =
         rtcs:setup_clusters(rtcs_config:configs([]), JoinFun, 8, current),
 
