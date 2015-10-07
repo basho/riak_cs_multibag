@@ -46,12 +46,14 @@ bags(disjoint) ->
     bags(1, disjoint).
 
 bags(NumNodes, disjoint) ->
-    [{"bag-A", "127.0.0.1", rtcs_config:pb_port(1)},
-     {"bag-B", "127.0.0.1", rtcs_config:pb_port(NumNodes + 1)},
-     {"bag-C", "127.0.0.1", rtcs_config:pb_port(NumNodes + 2)},
-     {"bag-D", "127.0.0.1", rtcs_config:pb_port(NumNodes + 3)},
-     {"bag-E", "127.0.0.1", rtcs_config:pb_port(NumNodes + 4)}].
+    bags(NumNodes, 1, disjoint).
 
+bags(NumNodes, NodeOffset, disjoint) ->
+    [{"bag-A", "127.0.0.1", rtcs_config:pb_port(NodeOffset)},
+     {"bag-B", "127.0.0.1", rtcs_config:pb_port(NodeOffset + NumNodes)},
+     {"bag-C", "127.0.0.1", rtcs_config:pb_port(NodeOffset + NumNodes + 1)},
+     {"bag-D", "127.0.0.1", rtcs_config:pb_port(NodeOffset + NumNodes + 2)},
+     {"bag-E", "127.0.0.1", rtcs_config:pb_port(NodeOffset + NumNodes + 3)}];
 bags(NumNodes, NodeOffset, shared) ->
     [{"bag-A", "127.0.0.1", rtcs_config:pb_port(NodeOffset)},
      {"bag-B", "127.0.0.1", rtcs_config:pb_port(NodeOffset + NumNodes)},
