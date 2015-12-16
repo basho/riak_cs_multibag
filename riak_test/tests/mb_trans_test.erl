@@ -105,6 +105,10 @@ transition_to_multibag_configuration(NodesInMaster, NodeList, StanchionNode) ->
     rt:pmap(fun({_CSNode, RiakNode}) ->
                     N = rtcs_dev:node_id(RiakNode),
                     rtcs:set_conf({cs, current, N}, BagConf),
+                    %% dev1 is the master cluster, so all CS nodes are configured as that
+                    rtcs:set_advanced_conf({cs, current, N},
+                                           [{riak_cs,
+                                             [{riak_host, {"127.0.0.1", rtcs_config:pb_port(1)}}]}]),
                     rtcs_exec:start_cs(N)
             end, NodeList),
     rtcs:set_conf({stanchion, current}, BagConf),

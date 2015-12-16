@@ -50,6 +50,11 @@ transition_to_mb(NodesInMaster, State) ->
     rt:pmap(fun({_CSNode, RiakNode}) ->
                     N = rtcs_dev:node_id(RiakNode),
                     rtcs:set_conf({cs, current, N}, BagConf),
+                    %% dev1 is the master cluster, so all CS nodes are configured as that
+                    %% Also could be dev2, but not dev3 or later.
+                    rtcs:set_advanced_conf({cs, current, N},
+                                           [{riak_cs,
+                                             [{riak_host, {"127.0.0.1", rtcs_config:pb_port(1)}}]}]),
                     rtcs_exec:start_cs(N)
             end, NodeList),
     rtcs:set_conf({stanchion, current}, BagConf),
