@@ -19,6 +19,7 @@ conf(NumNodes, BagFlavor) ->
 
 conf(NumNodes, NodeOffset, BagFlavor) ->
     Bags = bags(NumNodes, NodeOffset, BagFlavor),
+    [{"riak_host", "127.0.0.1:" ++ integer_to_list(rtcs_config:pb_port(NodeOffset))}] ++
     [{"supercluster.member." ++ BagId, IP ++ ":" ++ integer_to_list(Port)} ||
         {BagId, IP, Port} <- Bags].
 
